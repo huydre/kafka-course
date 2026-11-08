@@ -1,0 +1,248 @@
+{
+  "sparse-index": {
+    "problem": [
+      {
+        "file": "voice/sparse-index/problem-0-153b8457.mp3",
+        "duration": 3.44,
+        "hash": "268b270f",
+        "voice": "Hải Đăng"
+      },
+      {
+        "file": "voice/sparse-index/problem-1-a30cf151.mp3",
+        "duration": 4.32,
+        "hash": "c4009e69",
+        "voice": "Hải Đăng"
+      },
+      {
+        "file": "voice/sparse-index/problem-2-ed884a4f.mp3",
+        "duration": 4.64,
+        "hash": "35bcc737",
+        "voice": "Hải Đăng"
+      },
+      {
+        "file": "voice/sparse-index/problem-3-37118e9a.mp3",
+        "duration": 5.36,
+        "hash": "50ca71b2",
+        "voice": "Hải Đăng"
+      }
+    ],
+    "scan": [
+      {
+        "file": "voice/sparse-index/scan-0-fbcc20de.mp3",
+        "duration": 2.56,
+        "hash": "279877a6",
+        "voice": "Hải Đăng"
+      },
+      {
+        "file": "voice/sparse-index/scan-1-82dbefe0.mp3",
+        "duration": 3.04,
+        "hash": "0967ab28",
+        "voice": "Hải Đăng"
+      },
+      {
+        "file": "voice/sparse-index/scan-2-ba8f01dd.mp3",
+        "duration": 4.08,
+        "hash": "947e7f95",
+        "voice": "Hải Đăng"
+      },
+      {
+        "file": "voice/sparse-index/scan-3-835157a6.mp3",
+        "duration": 4,
+        "hash": "b3040dce",
+        "voice": "Hải Đăng"
+      }
+    ],
+    "dense": [
+      {
+        "file": "voice/sparse-index/dense-0-e46d61bb.mp3",
+        "duration": 3.2,
+        "hash": "5718f3d3",
+        "voice": "Hải Đăng"
+      },
+      {
+        "file": "voice/sparse-index/dense-1-25a33150.mp3",
+        "duration": 4.4,
+        "hash": "fd4e99a8",
+        "voice": "Hải Đăng"
+      },
+      {
+        "file": "voice/sparse-index/dense-2-9f44412f.mp3",
+        "duration": 4.88,
+        "hash": "5dcb2867",
+        "voice": "Hải Đăng"
+      }
+    ],
+    "sparse": [
+      {
+        "file": "voice/sparse-index/sparse-0-4fd3af40.mp3",
+        "duration": 3.92,
+        "hash": "0e9e8868",
+        "voice": "Hải Đăng"
+      },
+      {
+        "file": "voice/sparse-index/sparse-1-c717e225.mp3",
+        "duration": 5.68,
+        "hash": "20249b1d",
+        "voice": "Hải Đăng"
+      },
+      {
+        "file": "voice/sparse-index/sparse-2-6a88c154.mp3",
+        "duration": 4.32,
+        "hash": "04f00c3c",
+        "voice": "Hải Đăng"
+      },
+      {
+        "file": "voice/sparse-index/sparse-3-0d33514b.mp3",
+        "duration": 4.24,
+        "hash": "d7ef0db3",
+        "voice": "Hải Đăng"
+      }
+    ],
+    "summary": [
+      {
+        "file": "voice/sparse-index/summary-0-f31d1c81.mp3",
+        "duration": 4.24,
+        "hash": "20a028f9",
+        "voice": "Hải Đăng"
+      },
+      {
+        "file": "voice/sparse-index/summary-1-18e52d6a.mp3",
+        "duration": 3.6,
+        "hash": "92c2bd42",
+        "voice": "Hải Đăng"
+      },
+      {
+        "file": "voice/sparse-index/summary-2-22562c48.mp3",
+        "duration": 3.52,
+        "hash": "a3aa2de0",
+        "voice": "Hải Đăng"
+      },
+      {
+        "file": "voice/sparse-index/summary-3-d66a1527.mp3",
+        "duration": 3.12,
+        "hash": "debe184f",
+        "voice": "Hải Đăng"
+      }
+    ]
+  },
+  "key-partition": {
+    "lanes": [
+      {
+        "file": "voice/key-partition/lanes-0-2495687b.mp3",
+        "duration": 3.76,
+        "hash": "7c8f23e3",
+        "voice": "Hải Đăng"
+      },
+      {
+        "file": "voice/key-partition/lanes-1-381f1aff.mp3",
+        "duration": 3.84,
+        "hash": "865b44e7",
+        "voice": "Hải Đăng"
+      },
+      {
+        "file": "voice/key-partition/lanes-2-8ee900cb.mp3",
+        "duration": 3.2,
+        "hash": "c2298783",
+        "voice": "Hải Đăng"
+      }
+    ],
+    "hash": [
+      {
+        "file": "voice/key-partition/hash-0-1907e4df.mp3",
+        "duration": 4.56,
+        "hash": "46c61e27",
+        "voice": "Hải Đăng"
+      },
+      {
+        "file": "voice/key-partition/hash-1-0edbfd18.mp3",
+        "duration": 4.08,
+        "hash": "3b17ea60",
+        "voice": "Hải Đăng"
+      },
+      {
+        "file": "voice/key-partition/hash-2-f0b96abc.mp3",
+        "duration": 6.48,
+        "hash": "1abf16f4",
+        "voice": "Hải Đăng"
+      },
+      {
+        "file": "voice/key-partition/hash-3-dbef2ca8.mp3",
+        "duration": 4,
+        "hash": "34445820",
+        "voice": "Hải Đăng"
+      }
+    ],
+    "order": [
+      {
+        "file": "voice/key-partition/order-0-ab6c1830.mp3",
+        "duration": 3.84,
+        "hash": "86bf1968",
+        "voice": "Hải Đăng"
+      },
+      {
+        "file": "voice/key-partition/order-1-18adee6f.mp3",
+        "duration": 4.32,
+        "hash": "bef69577",
+        "voice": "Hải Đăng"
+      },
+      {
+        "file": "voice/key-partition/order-2-bd548a2e.mp3",
+        "duration": 6.48,
+        "hash": "0f5003f6",
+        "voice": "Hải Đăng"
+      }
+    ],
+    "resize": [
+      {
+        "file": "voice/key-partition/resize-0-101f5d7d.mp3",
+        "duration": 4.88,
+        "hash": "bde5e595",
+        "voice": "Hải Đăng"
+      },
+      {
+        "file": "voice/key-partition/resize-1-b63de87d.mp3",
+        "duration": 5.6,
+        "hash": "dc6d5d65",
+        "voice": "Hải Đăng"
+      },
+      {
+        "file": "voice/key-partition/resize-2-51eb51b6.mp3",
+        "duration": 4,
+        "hash": "6bd97cde",
+        "voice": "Hải Đăng"
+      },
+      {
+        "file": "voice/key-partition/resize-3-6e409d2d.mp3",
+        "duration": 6.64,
+        "hash": "e864eca5",
+        "voice": "Hải Đăng"
+      }
+    ],
+    "summary": [
+      {
+        "file": "voice/key-partition/summary-0-d2a83b67.mp3",
+        "duration": 3.36,
+        "hash": "df68e4df",
+        "voice": "Hải Đăng"
+      },
+      {
+        "file": "voice/key-partition/summary-1-d6f7cb55.mp3",
+        "duration": 2.64,
+        "hash": "5059aa7d",
+        "voice": "Hải Đăng"
+      },
+      {
+        "file": "voice/key-partition/summary-2-a2873d23.mp3",
+        "duration": 3.12,
+        "hash": "e92df98b",
+        "voice": "Hải Đăng"
+      },
+      {
+        "file": "voice/key-partition/summary-3-4197f56d.mp3",
+        "duration": 3.76,
+        "hash": "ffa82a45",
+        "voice": "Hải Đăng"
+      }
+    ]
+  }
+}
