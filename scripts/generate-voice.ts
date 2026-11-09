@@ -12,11 +12,17 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { keyPartitionScript } from '../src/lessons/key-partition-script'
+import { partitionCountScript } from '../src/lessons/partition-count-script'
+import { producerJourneyScript } from '../src/lessons/producer-journey-script'
+import { acksIdempotenceScript } from '../src/lessons/acks-idempotence-script'
+import { replicationIsrScript } from '../src/lessons/replication-isr-script'
+import { leaderElectionScript } from '../src/lessons/leader-election-script'
+import { segmentRetentionScript } from '../src/lessons/segment-retention-script'
 import { sparseIndexScript } from '../src/lessons/sparse-index-script'
 import { textHash } from '../src/player/text-hash'
 import type { VoiceClip, VoiceManifest } from '../src/player/timeline'
 
-const SCRIPTS = [sparseIndexScript, keyPartitionScript]
+const SCRIPTS = [sparseIndexScript, keyPartitionScript, segmentRetentionScript, partitionCountScript, producerJourneyScript, acksIdempotenceScript, replicationIsrScript, leaderElectionScript]
 const ROOT = join(import.meta.dirname, '..')
 const MANIFEST = join(ROOT, 'src/lessons/voice-manifest.json')
 const PYTHON = join(ROOT, 'vieneu-env/bin/python')

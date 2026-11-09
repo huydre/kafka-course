@@ -11,6 +11,7 @@ import {
   PlaneIcon,
   Scene,
   Stamp,
+  SummaryGrid,
   TitleCard,
   cameraAt,
   clamp,
@@ -123,6 +124,27 @@ function Chip({ x, y, label, glowOn, tone }: { x: number; y: number; label: stri
     >
       {label}
     </div>
+  )
+}
+
+/** A message in flight plus a fading trail of where it just was (only while it is moving). */
+function FlyingChip({ m, t, q, tone, glowOn }: { m: Placed; t: number; q: number; tone?: Neon; glowOn?: boolean }) {
+  const f = flight(m, t, q)
+  if (!f.visible) return null
+  const moving = f.flying && !f.inMachine
+  return (
+    <>
+      {moving &&
+        [4, 3, 2, 1].map((k) => {
+          const g = flight(m, t - k * 0.035, q)
+          return (
+            <div key={k} style={{ opacity: 0.22 * (1 - k / 5), filter: `blur(${k * 1.5}px)` }}>
+              <Chip x={g.x} y={g.y} label={m.label} tone={tone} />
+            </div>
+          )
+        })}
+      <Chip x={f.x} y={f.y} label={m.label} tone={tone} glowOn={glowOn ?? f.flying} />
+    </>
   )
 }
 
@@ -338,16 +360,15 @@ function hash(t: number, c: Cue) {
       <At x={MACHINE.x} y={MACHINE.y + 220}>
         <Pill text="partition = hash(key) % 3" tone="violet" size={32} o={Math.min(sp(t, a0 + 1.4), vis(t, 0, a1))} style={{ fontFamily: MONO }} />
       </At>
-      {wave.map((m) => {
-        const f = flight(m, t, 0)
-        return f.visible && <Chip key={m.label} x={f.x} y={f.y} label={m.label} glowOn={f.flying} />
-      })}
+      {wave.map((m) => (
+        <FlyingChip key={m.label} m={m} t={t} q={0} />
+      ))}
       {wave.map((m) => (
         <At key={m.label} x={slotX(m.slot)} y={laneY(m.p, 0)}>
           <Burst t={t} at={m.start + 1.75} tone={KEY_TONE[m.key]} r={60} />
         </At>
       ))}
-      <At x={1420} y={950}>
+      <At x={1420} y={905}>
         <Kinetic t={t} at={a3 + 2.6} text="A → luôn P1" size={84} color="#a5f3fc" glowColor={NEON.cyan} />
       </At>
     </Scene>
@@ -468,9 +489,8 @@ function resize(t: number, c: Cue) {
         <Chip key={m.label} x={slotX(m.slot)} y={laneY(m.p, q)} label={m.label} tone={warn && m.label === 'A3' ? 'red' : undefined} glowOn={warn && m.label === 'A3'} />
       ))}
       {wave.map((m) => {
-        const f = flight(m, t, 1)
         const red = warn && m.label === 'A4'
-        return f.visible && <Chip key={m.label} x={f.x} y={f.y} label={m.label} tone={red ? 'red' : undefined} glowOn={f.flying || red} />
+        return <FlyingChip key={m.label} m={m} t={t} q={1} tone={red ? 'red' : undefined} glowOn={flight(m, t, 1).flying || red} />
       })}
       <svg width={2400} height={1200} style={{ position: 'absolute', left: 0, top: 0, overflow: 'visible' }}>
         <path
@@ -506,53 +526,17 @@ function resize(t: number, c: Cue) {
 }
 
 function summary(t: number, c: Cue) {
-  const cards: { title: string; body: string; tone: Neon }[] = [
-    { title: 'Cùng key → cùng partition', body: 'vì hash(key) không đổi', tone: 'cyan' },
-    { title: 'Thứ tự chỉ trong 1 partition', body: 'mỗi partition là 1 log riêng', tone: 'green' },
-    { title: 'Key = thứ cần giữ thứ tự', body: 'wallet_id, user_id…', tone: 'amber' },
-    { title: 'Thêm partition → key đổi nhà', body: 'vì % N đổi · làm lúc thấp điểm', tone: 'red' },
-  ]
-  const pos = (i: number) => ({ x: 560 + (i % 2) * 800, y: 400 + Math.floor(i / 2) * 380 })
-  const keys: [number, Shot, number?][] = [[0, { x: 960, y: 580, s: 0.8, rx: 18 }]]
-  cards.forEach((_, i) => keys.push([c.at(i) - 0.2, { ...pos(i), s: 1.3, ry: i % 2 ? -8 : 8 }, 1.0]))
-  keys.push([c.end(3) + 0.3, { x: 960, y: 580, s: 0.82 }, 1.4])
-  const cam = cameraAt(t, keys)
   return (
-    <Scene t={t} camera={cam}>
-      {cards.map((card, i) => {
-        const { x, y } = pos(i)
-        const active = t >= c.at(i) && t < c.at(i + 1)
-        return (
-          <At key={card.title} x={x} y={y}>
-            <Panel t={t} at={c.at(i) + 0.1} w={700} h={300} tone={card.tone} strong={active}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 36, height: '100%', padding: '0 46px' }}>
-                <div
-                  style={{
-                    width: 110,
-                    height: 110,
-                    flexShrink: 0,
-                    borderRadius: 55,
-                    border: `5px solid ${NEON[card.tone]}`,
-                    display: 'grid',
-                    placeItems: 'center',
-                    fontSize: 62,
-                    fontWeight: 900,
-                    color: NEON[card.tone],
-                    boxShadow: glow(NEON[card.tone], 0.6),
-                  }}
-                >
-                  {i + 1}
-                </div>
-                <div>
-                  <div style={{ fontSize: 44, fontWeight: 900, lineHeight: 1.2 }}>{card.title}</div>
-                  <div style={{ fontSize: 32, fontWeight: 600, color: '#cbd5e1', marginTop: 12 }}>{card.body}</div>
-                </div>
-              </div>
-            </Panel>
-          </At>
-        )
-      })}
-    </Scene>
+    <SummaryGrid
+      t={t}
+      cue={c}
+      cards={[
+        { title: 'Cùng key → cùng partition', body: 'vì hash(key) không đổi', tone: 'cyan' },
+        { title: 'Thứ tự chỉ trong 1 partition', body: 'mỗi partition là 1 log riêng', tone: 'green' },
+        { title: 'Key = thứ cần giữ thứ tự', body: 'wallet_id, user_id…', tone: 'amber' },
+        { title: 'Thêm partition → key đổi nhà', body: 'vì % N đổi · làm lúc thấp điểm', tone: 'red' },
+      ]}
+    />
   )
 }
 
@@ -618,6 +602,14 @@ export const keyPartitionLesson: Lesson = {
           tone: 'warn',
           title: 'Hot partition',
           text: 'Nếu một key chiếm phần lớn traffic (ví dụ một merchant cực lớn), cả lượng tin đó dồn vào **một** partition. Thêm consumer cũng không đỡ được làn đó.',
+        },
+        {
+          kind: 'list',
+          items: [
+            { title: 'Custom partitioner', text: 'Tự viết partitioner, ví dụ dành riêng một partition cho khách hàng lớn nhất, các key còn lại hash vào những partition kia.' },
+            { title: 'Không cần thứ tự theo key?', text: 'Dùng `RoundRobinPartitioner` hoặc `UniformStickyPartitioner`: chia đều bất kể key, key vẫn được gửi kèm tin cho phía đọc dùng.' },
+            { title: 'Partition đích đang hỏng', text: 'Có key thì Kafka tính trên **mọi** partition, kể cả partition tạm không có leader → producer báo lỗi, **không** tự chuyển sang làn khác, vì lời hứa "cùng key, cùng làn".' },
+          ],
         },
         {
           kind: 'quiz',
@@ -692,6 +684,7 @@ export const keyPartitionLesson: Lesson = {
           items: [
             { title: 'Không giảm được', text: 'Kafka chỉ cho **tăng** số partition, không cho giảm.' },
             { title: 'Chọn dư từ đầu', text: 'Số partition ≈ max(throughput ÷ tốc độ 1 consumer, throughput ÷ tốc độ 1 partition) + dư địa tăng trưởng.' },
+            { title: 'Kinh nghiệm từ sách', text: 'Ví dụ: cần 1 GB/giây, mỗi consumer 50 MB/giây → ít nhất **20 partition**. Chưa có số đo thì giữ mỗi partition **dưới ~6 GB cho mỗi ngày retention**, đặt số partition bằng hoặc bội số số broker, và đừng ước quá cao (mỗi partition tốn RAM broker, làm chậm chuyển leader).' },
             { title: 'Nếu buộc phải tăng', text: 'Làm lúc thấp điểm, chờ consumer xử lý hết tin cũ trước khi gửi tin mới, hoặc tạo topic mới rồi chuyển dần.' },
           ],
         },

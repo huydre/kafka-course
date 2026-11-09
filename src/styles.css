@@ -1081,3 +1081,147 @@ button.sb-item:hover {
     grid-template-columns: 1fr 1fr;
   }
 }
+.wg-controls-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+.wg-timeline {
+  position: relative;
+  height: 120px;
+  margin: 34px 8px 0 8px;
+}
+.wg-seg {
+  position: absolute;
+  top: 0;
+  height: 64px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #3b82f6, #1e40af);
+  border: 2px solid #60a5fa;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  transition: all 0.25s;
+}
+.wg-seg.is-active {
+  background: linear-gradient(180deg, #16a34a, #14532d);
+  border-color: #4ade80;
+}
+.wg-seg.is-dead {
+  background: repeating-linear-gradient(45deg, rgba(239, 68, 68, 0.35) 0 8px, rgba(239, 68, 68, 0.12) 8px 16px);
+  border: 2px dashed #ef4444;
+  color: #fecaca;
+}
+.wg-cutoff {
+  position: absolute;
+  top: -26px;
+  bottom: 30px;
+  width: 0;
+  border-left: 3px solid #ef4444;
+  z-index: 2;
+}
+.wg-cutoff span {
+  position: absolute;
+  top: -2px;
+  left: 6px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #ef4444;
+}
+.wg-axis {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--muted);
+  border-top: 2px solid var(--border);
+  padding-top: 6px;
+}
+.wg-loads {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  height: 120px;
+  margin-top: 18px;
+  padding: 0 4px;
+}
+.wg-load {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 800;
+}
+.wg-load-bar {
+  width: 100%;
+  max-width: 46px;
+  border-radius: 8px 8px 0 0;
+  background: var(--primary);
+  min-height: 4px;
+}
+.wg-load.is-heavy .wg-load-bar {
+  background: #f59e0b;
+}
+.wg-load.is-idle {
+  color: var(--muted);
+}
+.wg-load.is-idle .wg-load-bar {
+  background: var(--border);
+}
+.wg-replica {
+  display: grid;
+  grid-template-columns: 230px 1fr 140px 70px;
+  align-items: center;
+  gap: 14px;
+  margin: 10px 0;
+}
+.wg-replica-name {
+  font-size: 14px;
+  color: var(--muted);
+}
+.wg-tape {
+  display: flex;
+  height: 34px;
+}
+.wg-cell {
+  position: relative;
+  flex: 1;
+  border: 1.5px solid var(--border);
+  border-right: 0;
+}
+.wg-cell:last-child {
+  border-right: 1.5px solid var(--border);
+}
+.wg-cell.is-committed {
+  background: #2a3a5c;
+}
+.wg-cell.is-pending {
+  background: var(--primary);
+}
+.wg-cell.is-out {
+  opacity: 0.35;
+}
+.wg-hw {
+  position: absolute;
+  left: -2px;
+  top: -20px;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--good);
+  border-left: 2px solid var(--good);
+  padding-left: 3px;
+  height: 54px;
+}
+.wg-leo {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  color: var(--muted);
+}

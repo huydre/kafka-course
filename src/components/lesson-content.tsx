@@ -18,7 +18,7 @@ export function Rich({ text }: { text: string }) {
 
 const CALLOUT_ICON = { info: 'ℹ️', warn: '⚠️', tip: '💡' }
 
-function BlockView({ block, lesson }: { block: Block; lesson: Lesson }): ReactNode {
+export function BlockView({ block, lesson }: { block: Block; lesson: Lesson }): ReactNode {
   switch (block.kind) {
     case 'p':
       return (

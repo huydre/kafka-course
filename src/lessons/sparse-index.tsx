@@ -726,6 +726,10 @@ export const sparseIndexLesson: Lesson = {
           title: 'Chi tiết thật trên đĩa',
           text: 'Mỗi dòng index thật trỏ tới **đầu một record batch** (thường ~16 KB nhờ batching), ghi offset cuối của batch đó. Nên khoảng cách giữa các mốc trên đĩa thường theo kích thước batch, với 4 KB là mức tối thiểu.',
         },
+        {
+          kind: 'p',
+          text: 'Anh em của `.index` là `.timeindex`: ánh xạ **thời điểm → offset**, dùng khi tìm tin theo thời gian (ví dụ reset consumer về "9 giờ sáng hôm qua"; Kafka Streams cũng dùng nhiều). Kafka **không lưu checksum cho index**: hỏng thì dựng lại từ `.log`, xoá đi cũng an toàn, chỉ là broker khởi động lâu hơn.',
+        },
         { kind: 'p', text: 'Bạn có thể tự xem các dòng index bằng công cụ đi kèm Kafka:' },
         {
           kind: 'code',

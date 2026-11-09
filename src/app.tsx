@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { CourseSidebar } from './components/course-sidebar'
-import { Rich, SectionView } from './components/lesson-content'
+import { BlockView, Rich, SectionView } from './components/lesson-content'
 import { QuizPanel } from './components/quiz-panel'
 import { COURSE_TITLE, LESSONS, PLANNED } from './lessons/course-catalog'
 
@@ -31,7 +31,19 @@ function useActiveSection(ids: string[]) {
     })
     return () => obs.disconnect()
   }, [key])
-  return active
+  return [active, setActive] as const
+}
+
+/** Scrolls to a section. Falls back to an instant jump when the browser ignores smooth scrolling. */
+function scrollToSection(id: string) {
+  const el = document.getElementById(id)
+  if (!el) return
+  const top = Math.max(0, el.getBoundingClientRect().top + window.scrollY - 24)
+  const before = window.scrollY
+  window.scrollTo({ top, behavior: 'smooth' })
+  setTimeout(() => {
+    if (Math.abs(window.scrollY - before) < 2 && Math.abs(top - before) > 2) window.scrollTo(0, top)
+  }, 350)
 }
 
 export default function App() {
@@ -54,13 +66,16 @@ export default function App() {
   const idx = LESSONS.findIndex((l) => l.slug === slug)
   const lesson = LESSONS[idx]
   const tocIds = [...lesson.sections.map((s) => s.id), 'kiem-tra', 'tong-ket']
-  const active = useActiveSection(tocIds)
+  const [active, setActive] = useActiveSection(tocIds)
 
   const go = (s: string) => {
     location.hash = `#/${s}`
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
-  const jump = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  const jump = (id: string) => {
+    setActive(id)
+    scrollToSection(id)
+  }
 
   const markDone = useCallback(() => {
     setCompleted((prev) => {
@@ -99,6 +114,14 @@ export default function App() {
           <div className="lesson-module">{lesson.module}</div>
           <h1>{lesson.title}</h1>
           <p className="lesson-summary">{lesson.summary}</p>
+
+          {lesson.intro && (
+            <section className="th-intro">
+              {lesson.intro.map((b, i) => (
+                <BlockView key={i} block={b} lesson={lesson} />
+              ))}
+            </section>
+          )}
 
           <section className="th-roadmap">
             <h2 className="th-h2">Lộ trình bài học</h2>
