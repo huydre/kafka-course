@@ -1,10 +1,13 @@
 import { Composition, Folder } from 'remotion'
 import { LESSONS } from '../lessons/course-catalog'
+import { BACKDROPS } from '../player/backdrops'
+import { BackdropShowcase, SHOWCASE_SECONDS } from './backdrop-showcase'
+import { SchematicShowcase } from './schematic-showcase'
 import { FPS, HEIGHT, LessonVideo, WIDTH, videoDurationInFrames } from './lesson-video'
 
 /** Every video block of every lesson section, as `<lesson>--<section>` (rendered MP4s burn in subtitles). */
 export const VIDEOS = LESSONS.flatMap((lesson) =>
-  lesson.sections.flatMap((section) =>
+  [{ id: 'intro', blocks: lesson.intro ?? [] }, ...lesson.sections].flatMap((section) =>
     section.blocks.flatMap((b) => (b.kind === 'video' ? [{ id: `${lesson.slug}--${section.id}`, lesson, scenes: b.scenes }] : [])),
   ),
 )
@@ -28,6 +31,17 @@ export function RemotionRoot() {
           ))}
         </Folder>
       ))}
+      <Folder name="showcase">
+        <Composition id="schematic" component={SchematicShowcase} durationInFrames={4 * FPS} fps={FPS} width={WIDTH} height={HEIGHT} />
+        <Composition
+          id="backdrops"
+          component={BackdropShowcase}
+          durationInFrames={Object.keys(BACKDROPS).length * SHOWCASE_SECONDS * FPS}
+          fps={FPS}
+          width={WIDTH}
+          height={HEIGHT}
+        />
+      </Folder>
     </>
   )
 }

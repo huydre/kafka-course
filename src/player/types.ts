@@ -26,8 +26,23 @@ export interface Cue {
   duration: number
 }
 
+/** Sound effects synthesized by `npm run sfx` into public/sfx/. */
+export type SfxKind = 'whoosh' | 'pop' | 'tick' | 'ding' | 'error'
+
+/** A sound effect pinned to a moment of the scene (seconds, usually derived from the cue). */
+export interface SceneSfx {
+  at: (cue: Cue) => number
+  kind: SfxKind
+  volume?: number
+}
+
 export interface Scene extends SceneScript {
   render: (t: number, cue: Cue) => ReactNode
+  /**
+   * Key-moment sounds (a broker dies, a leader is promoted...).
+   * Every scene also gets a whoosh on entry and a soft pop on each new beat automatically.
+   */
+  sfx?: SceneSfx[]
 }
 
 export interface ChoiceQuestion {
@@ -70,6 +85,8 @@ export interface Section {
 
 export interface Lesson extends Omit<LessonScript, 'scenes'> {
   scenes: Scene[]
+  /** Cold-open hook shown before the roadmap (usually one video + one quick question). */
+  intro?: Block[]
   roadmap: string[]
   sections: Section[]
   finalQuiz: Question[]

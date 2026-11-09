@@ -11,11 +11,13 @@
     "render": "remotion render src/remotion/index.ts",
     "still": "remotion still src/remotion/index.ts",
     "voice": "tsx scripts/generate-voice.ts",
+    "sfx": "python3 scripts/generate_sfx.py",
     "stills": "node scripts/render-stills.mjs"
   },
   "dependencies": {
     "@remotion/google-fonts": "4.0.541",
     "@remotion/media": "4.0.541",
+    "@remotion/motion-blur": "4.0.541",
     "@remotion/player": "4.0.541",
     "@remotion/transitions": "4.0.541",
     "react": "^19.3.1",

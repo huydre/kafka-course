@@ -1,11 +1,12 @@
 import { Audio } from '@remotion/media'
+import { CameraMotionBlur } from '@remotion/motion-blur'
 import { linearTiming, TransitionSeries } from '@remotion/transitions'
 import { fade } from '@remotion/transitions/fade'
 import { Fragment } from 'react'
 import { AbsoluteFill, Sequence, staticFile, useCurrentFrame, useVideoConfig } from 'remotion'
 import { LESSONS } from '../lessons/course-catalog'
 import { beatAt, lessonTiming, type SceneTiming } from '../player/timeline'
-import type { Lesson, Scene } from '../player/types'
+import type { Lesson, Scene, SfxKind } from '../player/types'
 import { SANS } from './video-fonts'
 
 export const FPS = 30
@@ -17,6 +18,23 @@ export const FADE = 15
 const CAPTION_STAGE_H = 920
 
 export type LessonVideoProps = { slug: string; scenes: string[]; burnCaptions: boolean }
+
+/** Default loudness per effect: well under the narration. */
+const SFX_VOLUME: Record<SfxKind, number> = { whoosh: 0.22, pop: 0.12, tick: 0.18, ding: 0.26, error: 0.24 }
+/** An automatic beat pop is skipped when a declared effect already lands this close to the beat. */
+const SFX_NEAR = 0.35
+
+type SfxHit = { at: number; kind: SfxKind; volume: number }
+
+/** Declared key-moment effects plus the automatic entry whoosh and per-beat pops. */
+function sceneSfx(scene: Scene, timing: SceneTiming): SfxHit[] {
+  const declared = (scene.sfx ?? []).map((s) => ({ at: s.at(timing.cue), kind: s.kind, volume: s.volume ?? SFX_VOLUME[s.kind] }))
+  const auto: SfxHit[] = [{ at: 0, kind: 'whoosh', volume: SFX_VOLUME.whoosh }]
+  timing.beats.forEach((b, k) => {
+    if (k > 0 && !declared.some((d) => Math.abs(d.at - b.start) < SFX_NEAR)) auto.push({ at: b.start, kind: 'pop', volume: SFX_VOLUME.pop })
+  })
+  return [...auto, ...declared].filter((h) => h.at >= 0 && h.at < timing.duration)
+}
 
 export const findLesson = (slug: string): Lesson => LESSONS.find((l) => l.slug === slug) ?? LESSONS[0]
 
@@ -31,11 +49,25 @@ export const videoDurationInFrames = (lesson: Lesson, sceneIds: string[]) => {
   return scenes.reduce((a, s, i) => a + sceneFrames(s, i, scenes.length), 0) - FADE * (scenes.length - 1)
 }
 
+/** The drawing of one scene at the current frame (reads the frame itself so motion blur can sample sub-frames). */
+function Picture({ scene, timing }: { scene: Scene; timing: SceneTiming }) {
+  const frame = useCurrentFrame()
+  const { fps } = useVideoConfig()
+  return <>{scene.render(Math.min(frame / fps, timing.duration), timing.cue)}</>
+}
+
 function SceneClip({ scene, timing, burnCaptions }: { scene: Scene; timing: SceneTiming; burnCaptions: boolean }) {
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
   const t = Math.min(frame / fps, timing.duration)
-  const picture = scene.render(t, timing.cue)
+  // Exported MP4s get real camera motion blur; the web player stays light and crisp.
+  const picture = burnCaptions ? (
+    <CameraMotionBlur samples={6} shutterAngle={180}>
+      <Picture scene={scene} timing={timing} />
+    </CameraMotionBlur>
+  ) : (
+    <Picture scene={scene} timing={timing} />
+  )
 
   const voice = timing.beats.map(
     (b, k) =>
@@ -45,12 +77,23 @@ function SceneClip({ scene, timing, burnCaptions }: { scene: Scene; timing: Scen
         </Sequence>
       ),
   )
+  const effects = sceneSfx(scene, timing).map((h, i) => (
+    <Sequence key={`sfx${i}`} from={Math.round(h.at * fps)} durationInFrames={Math.ceil(fps * 1.2)} layout="none">
+      <Audio src={staticFile(`sfx/${h.kind}.mp3`)} volume={h.volume} />
+    </Sequence>
+  ))
+  const sound = (
+    <>
+      {voice}
+      {effects}
+    </>
+  )
 
   if (!burnCaptions)
     return (
       <AbsoluteFill style={{ fontFamily: SANS }}>
         {picture}
-        {voice}
+        {sound}
       </AbsoluteFill>
     )
 
@@ -80,7 +123,7 @@ function SceneClip({ scene, timing, burnCaptions }: { scene: Scene; timing: Scen
       >
         {beatAt(timing, t)?.text}
       </div>
-      {voice}
+      {sound}
     </AbsoluteFill>
   )
 }
