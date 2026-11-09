@@ -30,7 +30,34 @@ Ghi lại quy trình đã chốt để làm bài học có video theo phong các
 
 Văn bản trong block hỗ trợ `**đậm**` và `` `code` ``. Lời văn bám theo tài liệu trong `docs/kafka/`, luôn nêu cả "vì sao", không chỉ "là gì".
 
-## 3. Quy tắc phong cách video
+## 3. Phong cách "sơ đồ kỹ thuật" (chuẩn từ 09/11/2026)
+
+Người dùng chê phong cách thẻ neon là "AI slop": mọi thứ cùng một kiểu thẻ bo tròn phát sáng, bố cục lặp "tiêu đề → 3 thẻ → câu chốt", hình không mô tả cơ chế. Từ nay video mới dùng **bộ hình sơ đồ kỹ thuật** trong `src/player/schematic.tsx`, nền `backdrop="plain"` (phẳng, lưới chấm mờ, không bokeh, không vignette). Xem toàn bộ: `npm run studio` → `showcase/schematic`. Ví dụ hoàn chỉnh: cảnh `lossSchematic` trong `src/lessons/acks-idempotence.tsx`.
+
+**Mỗi khái niệm Kafka một hình, dùng nhất quán ở mọi bài:**
+
+| Khái niệm | Component | Hình |
+|---|---|---|
+| Log / partition | `LogTape` | dải băng ô, số offset bên dưới; trạng thái ô `empty / filled / new / missing / dead`; mốc `marks` (HW, LEO, committed); con trỏ `cursor` (đang chép, đang đọc) |
+| Topic nhiều partition | `PartitionTapes` | nhiều dải xếp chồng, nhãn P0, P1… |
+| Broker | `ServerUnit` | tủ máy chủ 2U, đèn trạng thái; `down` = gạch chéo đỏ |
+| Producer | `ProducerBox` | cửa sổ terminal có dòng lệnh |
+| Tin đang bay | `MessageCell` | một ô cùng kiểu với ô của dải log |
+| Consumer | `ConsumerCaret` | mũi tam giác dưới dải log + tên + offset |
+| Luồng / quan hệ | `Wire` | mũi tên mảnh, nhãn ở giữa |
+| Chú thích | `Note` | chấm + đường dẫn gấp khúc + chữ, như chú thích bản vẽ |
+| Câu chốt | `Statement` | chữ lớn phẳng, một màu, không phát sáng |
+
+**Quy tắc:**
+- Bố cục theo **cấu trúc thật** của cơ chế (ví dụ hai dải log leader/follower đặt song song để thấy độ lệch), không xếp thẻ thành hàng cho có.
+- Người xem phải **thấy cơ chế mà không cần đọc chữ**: trạng thái nằm ở hình (ô đỏ nét đứt = mất, con trỏ vàng = đang chép, gạch chéo = chết). Chữ chỉ là chú thích ngắn bằng `Note`.
+- Màu (`INK`): nền `#0b0f17`, nét `#3a4458`, chữ `#d6dbe4`; một màu nhấn `accent` xanh cho thứ đang được nói tới; `warn` vàng cho tiến trình; `bad` đỏ cho mất/lỗi; `good` xanh lá cho đúng/xong. Không phát sáng, không gradient, nét 2px.
+- Camera chuyển động chậm và ít (đẩy vào nhẹ ở khoảnh khắc chính), vì sơ đồ cần đứng yên để đọc.
+- Vẫn giữ: `TitleCard` mở cảnh, đồng bộ theo `cue.at(k)`, soát ảnh tĩnh theo §6.
+
+## 3b. Quy tắc phong cách cũ (thẻ neon — các bài đã làm trước 09/11)
+
+> **Chuẩn chất lượng: các video của bài "Segment, Roll & Retention"** (`src/lessons/segment-retention.tsx`). Trước khi làm video mới, hãy render vài khung của bài này để so. Mỗi cảnh mở bằng `TitleCard`; nội dung chính là thẻ neon to (kiểu `SegmentCard`: số liệu ~70–80px, viền phát sáng); tin nhắn là chip phát sáng; khoảnh khắc chốt dùng `Kinetic` hoặc `Stamp`; đạo cụ là icon đơn giản; nền mặc định là `grid` phẳng. Thẻ phải chứa **dữ liệu** (số to, dải khối log, thanh tiến độ, huy hiệu trạng thái), không chứa câu chữ như "đã ghi" hay "đang chép…"; dùng `DataCard` (broker/producer) và `Stream` (dòng tin chảy liên tục) trong motion-kit. Trạng thái đổi bằng màu viền + huy hiệu (LEADER / OFFLINE / LEADER MỚI), không đóng dấu đè lên tiêu đề. Các thẻ cùng cỡ, xếp thành hàng. **Ví dụ đời thường cũng vẽ bằng thẻ neon** (viền hổ phách) có icon bên trong, không dựng cảnh hoạt hình phẳng hay nhân vật — người dùng đánh giá các bản đó xấu hơn bản gốc.
 
 Rút ra từ việc xem video thật của sydexa:
 
@@ -41,6 +68,44 @@ Rút ra từ việc xem video thật của sydexa:
 - **Minh hoạ thật**: icon HDD, RAM, file .log, sách, đồng hồ, cờ, máy bay giấy, bánh răng, cửa sổ code gõ dần (`CodeWindow`).
 - **Camera luôn chuyển động**, xem phần 4.
 - Nền tối có lưới mờ, quầng sáng xanh trôi chậm, vignette. Watermark `kafka·lab` ở góc trên bên phải.
+
+### Học thêm từ kênh YouTube sydexa (video dài, giải thích một cơ chế)
+
+Rút ra sau khi xem "PostgreSQL giữ dữ liệu khi máy chủ sập" và "Lỗ hổng Hack RAM":
+
+- **Mở đầu bằng câu chuyện (cold open), không vào thẳng sơ đồ.** Hai kiểu đã thấy:
+  - **Bảng điều tra:** tờ giấy ghim trên bảng gỗ, đèn rọi, câu hỏi bị khoanh đỏ bằng tay, dây đỏ nối các manh mối.
+  - **Nhân vật minh hoạ** đang gặp tình huống đời thường, ví dụ làm bài thi với đồng hồ đếm ngược.
+
+  Trong kit: `Scene backdrop="board"`, `Paper`, `CaseLabel`, `HandCircle`, `RedString`. Đặt video này trong `lesson.intro`: nó hiện trước phần Lộ trình, kèm 1 câu Quick Quiz "đoán trước". Ví dụ mẫu: cảnh `hook` của bài Segment & Retention.
+- **Ví dụ đời thường đặt song song với sơ đồ kỹ thuật:** một panel tình huống (màu cam) bên trái, sơ đồ hệ thống bên phải. Hai bên phản chiếu nhau từng bước.
+- **Ví dụ đời thường phải được VẼ thành cảnh, và cùng cấu trúc với sơ đồ Kafka.** Không dùng ô chữ hay icon chung chung (người dùng chê bản "Quầy 1, Quầy 2" là xấu và không trực quan). Bản đạt: quầy thu ngân có băng chuyền và máy tính tiền, khách đẩy xe xếp hàng, thu ngân đội mũ đeo tạp dề, người thừa ngủ gật trên ghế băng. **Hàng i bên siêu thị đặt ngang hàng với partition i bên Kafka**, và ở cảnh toàn có thanh chú giải "khách hàng = tin nhắn · quầy = partition · thu ngân = consumer". Trong kit: `ShopperIcon`, `CashierIcon`, `CheckoutCounter`.
+- **Một sơ đồ hệ thống dùng lại cả video**, ví dụ hộp "Broker" có vùng RAM và vùng Đĩa. Mỗi bước chỉ thêm chi tiết lên sơ đồ đó, không đổi sang hình mới.
+- **Ít màu (người dùng chê nhiều màu là "AI slop").** Mỗi cảnh chỉ dùng: **xám/slate** cho mọi thứ trung tính (người, đồ vật, đường nối, chữ phụ), **một màu chính xanh dương** cho phía Kafka, **một màu nhấn hổ phách** cho phía ví dụ đời thường, **đỏ** chỉ cho lỗi hoặc thứ quá tải, **xanh lá** chỉ cho "đúng/xong". Không tô cầu vồng theo từng đối tượng: muốn phân nhóm thì dùng hai sắc độ của cùng màu xanh. Hình minh hoạ (`ShopperIcon`, `CashierIcon`, `CheckoutCounter`) mặc định xám, có tham số `accent` cho màu nhấn duy nhất.
+- **Màu và nét có nghĩa cố định:**
+  - tím = log/WAL; xanh dương = dữ liệu; xanh lá = commit/thành công; cam = ví dụ đời thường/cảnh báo; đỏ = sự cố.
+  - **Viền nét đứt = bộ nhớ dễ mất (RAM), viền liền = bền (đĩa).**
+- **Nhãn ghi chú nhỏ gắn ngay cạnh chi tiết** ("bản mới", "lúc báo thành công", "máy sập"). **Gạch ngang** một kết luận khi nó bị bác bỏ. Ô **"?" nét đứt** cho thứ chưa biết.
+- **Nhịp chậm ở phần sơ đồ:** khung, nhãn, đường nối hiện dần. Ít xoay 3D hơn video ngắn. Giữ camera động cho phần mở đầu và các khoảnh khắc "à ra thế".
+- **Kết thúc bằng slide "Bài học"** dạng checklist ✓ (trong khoá học dùng `SummaryGrid`).
+
+### Nền (backdrop)
+
+Chọn qua `<Scene backdrop="…">` (code ở `src/player/backdrops.tsx`). Mọi nền đều dựng procedural (phối cảnh SVG, ánh sáng thể tích, chất liệu từ fractal noise), tối, ít màu và phản ứng theo camera. Toàn khung có film grain (`FilmGrain`, đổi 12 lần/giây). Xem cả 7 nền: `npm run studio` → `showcase/backdrops`.
+
+| Tên | Hợp với |
+|---|---|
+| `grid` (mặc định) | sàn lưới phối cảnh vô tận, có đường chân trời phát sáng — sơ đồ Kafka thông thường |
+| `board` | mở đầu kiểu "hồ sơ vụ việc" |
+| `blueprint` | công thức, kiến trúc, cấu trúc file |
+| `servers` | lối đi phòng máy chủ 3D, đèn trạng thái nhấp nháy — sự cố vận hành, broker, cluster |
+| `terminal` | log, lệnh CLI, debug |
+| `desk` | ví dụ đời thường, câu chuyện |
+| `studio` | tóm tắt, chữ lớn, khoảnh khắc "à ra thế" |
+
+Trong một bài nên đổi nền giữa các phần cho đỡ nhàm, nhưng trong một video thì giữ một nền.
+
+**Nền luôn phải lùi ra sau nội dung** (người dùng phản hồi: nền chi tiết quá làm mất tập trung). Vì vậy mọi nền (trừ `board`) đều có lớp `Calm` làm tối và dịu vùng giữa, chi tiết chỉ còn ở rìa khung. Chuyển động của nền phải rất chậm. Không thêm chữ, hình vẽ nổi bật hay hoạ tiết tương phản cao vào nền. Muốn gây ấn tượng thì làm ở nội dung, không làm ở nền.
 
 ## 4. Công thức camera
 
@@ -55,13 +120,32 @@ Rút ra từ việc xem video thật của sydexa:
 | Kéo ra toàn cảnh | `s ≈ 0.6–0.86` khi cần so sánh hoặc tổng hợp. |
 | Tóm tắt | Mỗi beat camera dừng ở một thẻ (`s ≈ 1.25–1.3`, `ry` ±8–10), cuối cùng kéo ra thấy cả nhóm. |
 
-Camera "thở" (trôi nhẹ) đã có sẵn trong `Scene`, không cần thêm.
+Các hiệu ứng sau đã có sẵn trong kit, mọi video tự có, không cần thêm:
+- **Camera "thở":** trôi và zoom rất nhẹ liên tục (trong `Scene`).
+- **Camera bám kiểu gimbal:** keyframe chỉ là **đích**. Camera đuổi theo đích bằng bộ lọc giảm chấn (SmoothDamp, `SMOOTH_TIME` 0,32 giây, nhìn trước `LOOKAHEAD` 0,24 giây để đến đúng lúc). Nhờ vậy các cú liền nhau nối thành đường cong, không dừng rồi rẽ gắt. Đo trên một chuỗi 4 cú máy: tốc độ đỉnh và độ giật đều giảm khoảng 28% so với cách cũ.
+- **Đường đi cong:** mỗi cú máy đi theo cung bezier (lệch 14% quãng đường, đổi phía luân phiên) thay vì đường thẳng. Zoom tính theo thang **log** nên tốc độ zoom cảm nhận đều.
+- Vì camera đến đích trễ khoảng 0,1–0,3 giây, **đặt key sớm hơn khoảng 0,2 giây** so với lúc muốn khung hình đứng yên. Chữ ở mép khung nên chừa thêm lề.
+- **Nghiêng cua theo tốc độ:** lia ngang nhanh thì khung nghiêng tối đa khoảng 3°, di chuyển nhanh thì lùi ra tối đa 6%, dừng lại thì về như cũ (trong `cameraAt`).
+- **Bokeh parallax:** hạt sáng hậu cảnh trôi bằng 0,35 tốc độ camera, hạt tiền cảnh trôi bằng 1,55 lần, tạo chiều sâu. Nền `board` dùng hạt màu ấm.
+- **Lấy nét mở đầu:** 0,9 giây đầu mỗi video đi từ mờ sang rõ, kèm zoom nhẹ.
+- **Vệt sáng quét ngang** mỗi `Panel` ngay sau khi nó xuất hiện.
+- **Motion blur thật** (`CameraMotionBlur`, 6 mẫu) chỉ áp khi xuất MP4. Web player giữ nét và nhẹ. Giọng đọc nằm **ngoài** lớp blur, nếu không tiếng sẽ phát chồng 6 lần.
+- Vật thể đang bay nên có **vệt đuôi**: vẽ lại vật ở các thời điểm `t − k·0.035` với độ mờ giảm dần. Xem `FlyingChip` trong bài Key → Partition.
+
+> Xuất MP4 có motion blur mất khoảng **12 giây xử lý cho mỗi giây video**: video 22 giây mất khoảng 4,5 phút. Còn `npm run stills` render ảnh tĩnh có blur, nên cũng chậm hơn trước.
 
 ## 5. Đồng bộ với giọng đọc
 
 - Mọi animation đặt mốc theo `cue.at(k)` hoặc `cue.end(k)`, **không đặt theo giây cứng**. Sửa câu thoại thì hình tự khớp lại.
 - Khoảng lặng: `LEAD 0.5s`, `GAP 0.45s`, `TAIL 1.1s` (trong `timeline.ts`). Dùng `hold` trong script nếu cần giữ khung cuối lâu hơn.
 - Kiểm tra mỗi beat đủ dài cho chuỗi animation bên trong nó. Xem độ dài thật trong `src/lessons/voice-manifest.json`.
+
+### Hiệu ứng âm thanh (SFX)
+
+- 5 tiếng tự tổng hợp bằng `npm run sfx` (`scripts/generate_sfx.py` → `public/sfx/`), không dùng mẫu có bản quyền: `whoosh`, `pop`, `tick`, `ding`, `error`.
+- **Tự động cho mọi cảnh** (`lesson-video.tsx`): `whoosh` khi vào cảnh, `pop` nhẹ ở đầu mỗi beat từ beat thứ hai trở đi.
+- **Khoảnh khắc chính** khai báo trong bài: `sfx: [{ kind: 'error', at: (c) => c.at(1) + 0.2 }]`. Dùng **đúng công thức mốc mà hàm render dùng**, để tiếng khớp hình. `pop` tự động bị bỏ nếu có tiếng khai báo trong khoảng 0,35s quanh đầu beat.
+- Quy ước: `error` khi broker chết hoặc mất tin; `ding` khi kết quả an toàn (leader mới lên, ghi xong); `tick` khi một con số hay trạng thái nhỏ đổi. Mỗi cảnh tối đa khoảng 3 tiếng khai báo, để giọng đọc luôn nổi lên trên.
 
 ## 6. Quy trình làm một bài hoặc một phần mới
 
@@ -83,6 +167,7 @@ Camera "thở" (trôi nhẹ) đã có sẵn trong `Scene`, không cần thêm.
 |---|---|
 | `npm run dev` | Web khoá học (Vite) |
 | `npm run voice [-- <slug>]` | Thu âm giọng Hải Đăng (VieNeu). `TTS_VOICE="Tên"` để đổi giọng. |
+| `npm run sfx` | Tổng hợp lại hiệu ứng âm thanh vào `public/sfx/` |
 | `npm run stills -- <id> <frame...>` | Render ảnh tĩnh để soát |
 | `npm run studio` | Mở Remotion Studio |
 | `npm run render -- <id> out/x.mp4` | Xuất MP4 (phụ đề in sẵn ở dải dưới) |
@@ -98,4 +183,5 @@ Camera "thở" (trôi nhẹ) đã có sẵn trong `Scene`, không cần thêm.
 - **Không để chữ tiêu đề lớn đè lên hình**: `TitleCard` đã có lớp nền tối (scrim) che phía sau.
 - **Không bao giờ làm mờ hay ẩn vật thể đang được nói tới.** Từng để chip mờ 15% khi nằm "trong" máy partitioner, nên người xem tưởng A4 biến mất. Cách đúng: cho vật thể dừng **trên** máy (`WAIT`), hiện rõ và phát sáng.
 - **Khi bố cục co giãn** (`laneY(i, q)`), nhãn đặt theo toạ độ cố định có thể bị làn mới đè lên. Đặt nhãn ở vùng trống chắc chắn, hoặc tính toạ độ theo bố cục mới.
+- **Nội dung của một `Panel` phải nằm BÊN TRONG nó** (làm `children`, toạ độ tính từ góc trên trái của panel). Panel xoay 3D lúc xuất hiện và lắc nhẹ liên tục; nếu đặt ô số liệu hay biểu đồ chồng lên bằng toạ độ world, chúng sẽ lệch khỏi khung (lỗi từng gặp ở cảnh "lag 2 giờ sáng"). Nếu buộc phải đặt chồng thì dùng `<Panel still>`. Số liệu dài đặt `whiteSpace: 'nowrap'` và chừa đủ chiều rộng cho giá trị **lớn nhất** mà số đó có thể đạt tới.
 - **Chú thích phụ của một hàng** (thanh tiến độ, trạng thái) đặt **bên cạnh** thẻ, đừng đặt bên dưới, vì hàng kế tiếp có thể sát ngay đó.
