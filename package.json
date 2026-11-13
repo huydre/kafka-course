@@ -12,7 +12,9 @@
     "still": "remotion still src/remotion/index.ts",
     "voice": "tsx scripts/generate-voice.ts",
     "sfx": "python3 scripts/generate_sfx.py",
-    "stills": "node scripts/render-stills.mjs"
+    "stills": "node scripts/render-stills.mjs",
+    "qa": "node scripts/qa-stills.mjs",
+    "motion": "node scripts/motion-check.mjs"
   },
   "dependencies": {
     "@remotion/google-fonts": "4.0.541",

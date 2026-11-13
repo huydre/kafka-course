@@ -157,7 +157,7 @@ export function Scene({
   return (
     <AbsoluteFill style={{ background: '#05070f', overflow: 'hidden', fontFamily: SANS, color: NEON.white }}>
       <Backdrop name={backdrop} t={t} camera={camera} />
-      {backdrop !== 'plain' && <Bokeh t={t} camera={camera} layer="back" warm={BACKDROPS[backdrop].warm} />}
+      {backdrop !== 'plain' && backdrop !== 'soft' && <Bokeh t={t} camera={camera} layer="back" warm={BACKDROPS[backdrop].warm} />}
       <AbsoluteFill
         style={{
           perspective: 2200,
@@ -169,10 +169,10 @@ export function Scene({
       >
         <AbsoluteFill style={world}>{children}</AbsoluteFill>
       </AbsoluteFill>
-      {backdrop !== 'plain' && <Bokeh t={t} camera={camera} layer="front" warm={BACKDROPS[backdrop].warm} />}
+      {backdrop !== 'plain' && backdrop !== 'soft' && <Bokeh t={t} camera={camera} layer="front" warm={BACKDROPS[backdrop].warm} />}
       {overlay}
-      {backdrop !== 'plain' && <AbsoluteFill style={{ background: 'radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.65) 100%)', pointerEvents: 'none' }} />}
-      <FilmGrain t={t} />
+      {backdrop !== 'plain' && backdrop !== 'soft' && <AbsoluteFill style={{ background: 'radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.65) 100%)', pointerEvents: 'none' }} />}
+      {backdrop !== 'soft' && <FilmGrain t={t} />}
       <div style={{ position: 'absolute', right: 44, top: 30, fontSize: 30, fontWeight: 800, opacity: 0.85, letterSpacing: 0.5 }}>
         kafka<span style={{ color: NEON.blue }}>·</span>lab
       </div>
@@ -233,7 +233,8 @@ export function Kinetic({
 }
 
 /** Section title that appears big in the middle, then shrinks to the top to make room. */
-export function TitleCard({ t, at, kicker, title, tone = 'sky', dock = at + 1.8 }: { t: number; at: number; kicker: string; title: string; tone?: Neon; dock?: number }) {
+/** `until`: fade the docked title out (use when the camera later pushes in and the title would cover the subject). */
+export function TitleCard({ t, at, kicker, title, tone = 'sky', dock = at + 1.8, until = Infinity }: { t: number; at: number; kicker: string; title: string; tone?: Neon; dock?: number; until?: number }) {
   const d = move(t, dock, 0.9)
   // While the title is big, a dark scrim hides whatever the scene has already placed behind it.
   const scrim = Math.min(clamp(sp(t, at - 0.1)), 1 - d) * 0.82
@@ -247,6 +248,7 @@ export function TitleCard({ t, at, kicker, title, tone = 'sky', dock = at + 1.8 
         top: lerp(470, 108, d),
         transform: `translate(-50%, -50%) scale(${lerp(1, 0.52, d)})`,
         textAlign: 'center',
+        opacity: (Number.isFinite(until) ? 1 - span(t, until, until + 0.6) : 1),
       }}
     >
       <Kinetic t={t} at={at} text={kicker} size={40} weight={800} color={NEON[tone]} stagger={0.02} style={{ letterSpacing: 8, marginBottom: 14 }} />

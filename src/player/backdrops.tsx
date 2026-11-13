@@ -7,7 +7,7 @@ import { useId, type ReactNode } from 'react'
 import { AbsoluteFill, getRemotionEnvironment } from 'remotion'
 
 type Cam = { x: number; y: number }
-export type BackdropName = 'plain' | 'grid' | 'board' | 'blueprint' | 'servers' | 'terminal' | 'desk' | 'studio'
+export type BackdropName = 'soft' | 'plain' | 'grid' | 'board' | 'blueprint' | 'servers' | 'terminal' | 'desk' | 'studio'
 
 const W = 1920
 const H = 1080
@@ -303,10 +303,39 @@ function Plain({ camera }: { camera: Cam }) {
   )
 }
 
+/**
+ * Deep navy glow: royal-blue light in the centre falling off to near-black corners, a few thin light streaks
+ * drifting horizontally, faint specks of dust. Calm enough for diagrams, rich enough to feel premium.
+ */
+function Soft({ t, camera }: { t: number; camera: Cam }) {
+  const px = -(camera.x - W / 2) * 0.05
+  const py = -(camera.y - H / 2) * 0.05
+  const streaks = [
+    { y: 300, w: 420, s: 60, o: 0.35 },
+    { y: 760, w: 300, s: 44, o: 0.25 },
+    { y: 980, w: 520, s: 70, o: 0.2 },
+  ]
+  return (
+    <>
+      <AbsoluteFill style={{ background: 'radial-gradient(ellipse 75% 70% at 50% 42%, #1840b8 0%, #0c2276 38%, #061245 70%, #020722 100%)' }} />
+      <AbsoluteFill style={{ background: 'radial-gradient(ellipse 40% 30% at 50% 0%, rgba(120,170,255,0.25), transparent 70%)', transform: `translate(${px}px, ${py}px)` }} />
+      {streaks.map((k, i) => {
+        const x = wrap(t * k.s + i * 700 + px * 2, W + k.w * 2) - k.w
+        return <div key={i} style={{ position: 'absolute', left: x, top: k.y + py, width: k.w, height: 2, borderRadius: 1, background: 'linear-gradient(90deg, transparent, rgba(150,190,255,0.9), transparent)', opacity: k.o, boxShadow: '0 0 12px rgba(120,170,255,0.8)' }} />
+      })}
+      {Array.from({ length: 26 }, (_, i) => (
+        <div key={`d${i}`} style={{ position: 'absolute', left: rand(i) * W + px * (0.5 + rand(i + 9)), top: wrap(rand(i + 3) * H - t * (6 + rand(i + 5) * 10), H) + py, width: 3, height: 3, borderRadius: 2, background: '#9cc0ff', opacity: 0.15 + rand(i + 7) * 0.35 }} />
+      ))}
+      <AbsoluteFill style={{ background: 'radial-gradient(ellipse 85% 80% at 50% 50%, transparent 55%, rgba(1,4,20,0.75) 100%)' }} />
+    </>
+  )
+}
+
 /* ------------------------------------------------------------------ registry */
 
 export const BACKDROPS: Record<BackdropName, { label: string; use: string; warm: boolean }> = {
-  plain: { label: 'Bản vẽ phẳng', use: 'phong cách sơ đồ kỹ thuật', warm: false },
+  soft: { label: 'Navy phát sáng', use: 'chuẩn mới: nền navy, thẻ viền sáng, khối 3D xanh bóng', warm: false },
+  plain: { label: 'Bản vẽ phẳng', use: 'phong cách sơ đồ kỹ thuật (tối)', warm: false },
   grid: { label: 'Lưới kỹ thuật', use: 'mặc định — phong cách chuẩn của khoá học', warm: false },
   board: { label: 'Bảng điều tra', use: 'mở đầu kiểu "hồ sơ vụ việc"', warm: true },
   blueprint: { label: 'Bản vẽ kỹ thuật', use: 'công thức, kiến trúc, cấu trúc file', warm: false },
@@ -332,6 +361,8 @@ export function Backdrop({ name, t, camera }: { name: BackdropName; t: number; c
 
 function BackdropBase({ name, t, camera }: { name: BackdropName; t: number; camera: Cam }): ReactNode {
   switch (name) {
+    case 'soft':
+      return <Soft t={t} camera={camera} />
     case 'plain':
       return <Plain camera={camera} />
     case 'board':

@@ -8,7 +8,7 @@
  * Env:   TTS_VOICE  VieNeu preset voice (default "Hải Đăng"); changing it re-records everything.
  */
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { keyPartitionScript } from '../src/lessons/key-partition-script'
@@ -17,18 +17,52 @@ import { producerJourneyScript } from '../src/lessons/producer-journey-script'
 import { acksIdempotenceScript } from '../src/lessons/acks-idempotence-script'
 import { replicationIsrScript } from '../src/lessons/replication-isr-script'
 import { leaderElectionScript } from '../src/lessons/leader-election-script'
+import { consumerGroupScript } from '../src/lessons/consumer-group-script'
+import { rebalanceScript } from '../src/lessons/rebalance-script'
 import { segmentRetentionScript } from '../src/lessons/segment-retention-script'
 import { sparseIndexScript } from '../src/lessons/sparse-index-script'
+import { commitOffsetScript } from '../src/lessons/commit-offset-script'
+import { deliverySemanticsScript } from '../src/lessons/delivery-semantics-script'
+import { transactionsScript } from '../src/lessons/transactions-script'
+import { compactionScript } from '../src/lessons/compaction-script'
+import { tieredStorageScript } from '../src/lessons/tiered-storage-script'
+import { schemaRegistryScript } from '../src/lessons/schema-registry-script'
+import { kafkaConnectScript } from '../src/lessons/kafka-connect-script'
+import { kafkaStreamsScript } from '../src/lessons/kafka-streams-script'
+import { monitoringScript } from '../src/lessons/monitoring-script'
+import { sizingTuningScript } from '../src/lessons/sizing-tuning-script'
+import { incidentsOpsScript } from '../src/lessons/incidents-ops-script'
+import { outboxInboxScript } from '../src/lessons/outbox-inbox-script'
+import { eventDesignScript } from '../src/lessons/event-design-script'
+import { retrySagaScript } from '../src/lessons/retry-saga-script'
+import { capstoneScript } from '../src/lessons/capstone-script'
 import { textHash } from '../src/player/text-hash'
 import type { VoiceClip, VoiceManifest } from '../src/player/timeline'
 
-const SCRIPTS = [sparseIndexScript, keyPartitionScript, segmentRetentionScript, partitionCountScript, producerJourneyScript, acksIdempotenceScript, replicationIsrScript, leaderElectionScript]
+const SCRIPTS = [sparseIndexScript, keyPartitionScript, segmentRetentionScript, partitionCountScript, producerJourneyScript, acksIdempotenceScript, replicationIsrScript, leaderElectionScript, consumerGroupScript, rebalanceScript, commitOffsetScript, deliverySemanticsScript, transactionsScript, compactionScript, tieredStorageScript, schemaRegistryScript, kafkaConnectScript, kafkaStreamsScript, monitoringScript, sizingTuningScript, incidentsOpsScript, outboxInboxScript, eventDesignScript, retrySagaScript, capstoneScript]
 const ROOT = join(import.meta.dirname, '..')
 const MANIFEST = join(ROOT, 'src/lessons/voice-manifest.json')
 const PYTHON = join(ROOT, 'vieneu-env/bin/python')
 const VOICE = process.env.TTS_VOICE ?? 'Hải Đăng'
 
 const only = process.argv[2]
+
+/**
+ * Several lessons may be recorded from parallel sessions: the manifest is read-modify-written and VieNeu is CPU
+ * heavy, so only one run at a time holds this lock (a directory, created atomically). Stale after 30 minutes.
+ */
+const LOCK = join(tmpdir(), 'kafka-course-voice.lock')
+for (;;) {
+  try {
+    mkdirSync(LOCK)
+    break
+  } catch {
+    if (Date.now() - statSync(LOCK).mtimeMs > 30 * 60_000) rmSync(LOCK, { recursive: true, force: true })
+    else Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 3000)
+  }
+}
+process.on('exit', () => rmSync(LOCK, { recursive: true, force: true }))
+
 const manifest: VoiceManifest = existsSync(MANIFEST) ? JSON.parse(readFileSync(MANIFEST, 'utf8')) : {}
 
 const duration = (file: string) =>

@@ -1225,3 +1225,35 @@ button.sb-item:hover {
   font-size: 13px;
   color: var(--muted);
 }
+
+/* group-lab: one row per consumer with its partitions */
+.wg-assign {
+  display: grid;
+  gap: 6px;
+  margin-top: 16px;
+}
+.wg-assign-row {
+  display: grid;
+  grid-template-columns: 40px 160px 1fr;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 13px;
+  font-weight: 700;
+}
+.wg-assign-track {
+  height: 10px;
+  border-radius: 5px;
+  background: var(--border);
+  overflow: hidden;
+}
+.wg-assign-bar {
+  height: 100%;
+  background: var(--primary);
+}
+.wg-assign-row.is-heavy .wg-assign-bar {
+  background: #f59e0b;
+}
+.wg-assign-row.is-idle {
+  color: var(--muted);
+}

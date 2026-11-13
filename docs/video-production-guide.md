@@ -30,6 +30,18 @@ Ghi lại quy trình đã chốt để làm bài học có video theo phong các
 
 Văn bản trong block hỗ trợ `**đậm**` và `` `code` ``. Lời văn bám theo tài liệu trong `docs/kafka/`, luôn nêu cả "vì sao", không chỉ "là gì".
 
+## 2b. Phong cách "navy phát sáng" (chuẩn từ 12/11/2026, bài Consumer group)
+
+Cùng bộ hình sơ đồ ở §3 nhưng vẽ theo chủ đề navy: bọc cảnh bằng `SoftScene` (hoặc `SoftTheme` cho `SummaryList`), lấy màu từ `SOFT`, ô đọc số dùng `SOFT_PANEL`. Mọi component trong `schematic.tsx` tự đổi giao diện qua context (`useInk()`); bài cũ dùng `INK` vẫn giữ nền tối phẳng.
+
+- Nền `soft`: navy sâu, sáng ở giữa, tối dần ra góc; vài vệt sáng mảnh trôi ngang, bụi sáng li ti.
+- Chủ thể (consumer đang chạy, coordinator, dòng tóm tắt đang nói) là **khối 3D xanh bóng `HERO`** chữ trắng, có `Sheen` nhẹ. Thứ phụ là thẻ xanh trong suốt viền sáng.
+- Ô log: xanh bóng, **mọi ô cùng kích thước**; tin mới là ô sáng trắng-xanh phát sáng (không nhô lên). Nhãn mốc, chú thích, yêu cầu mạng là viên thuốc tối viền sáng.
+- Dòng tin: chấm tròn sáng nhỏ chạy dọc dây, không xoay.
+- **Sơ đồ luôn thẳng:** `SoftScene` bỏ xoay/nghiêng camera (r, rx, ry = 0). Không thêm vật trang trí trôi nổi.
+- **Icon 3D thật** thay cho icon SVG tự vẽ: `Icon3D name="lock" …` (53 icon trong `public/icons3d/`, từ 3dicons.co, giấy phép **CC0**, đã tách nền). Dùng cho đồ vật và kết luận (khoá = bền, lửa = sự cố, cúp = xong).
+- Chuyển động: tiêu đề có huy hiệu, chữ từng từ hiện ra kèm nhoè rồi thu lên trên; `Rise` nảy nhẹ; `Statement` hiện từng từ.
+
 ## 3. Phong cách "sơ đồ kỹ thuật" (chuẩn từ 09/11/2026)
 
 Người dùng chê phong cách thẻ neon là "AI slop": mọi thứ cùng một kiểu thẻ bo tròn phát sáng, bố cục lặp "tiêu đề → 3 thẻ → câu chốt", hình không mô tả cơ chế. Từ nay video mới dùng **bộ hình sơ đồ kỹ thuật** trong `src/player/schematic.tsx`, nền `backdrop="plain"` (phẳng, lưới chấm mờ, không bokeh, không vignette). Xem toàn bộ: `npm run studio` → `showcase/schematic`. Ví dụ hoàn chỉnh: cảnh `lossSchematic` trong `src/lessons/acks-idempotence.tsx`.
@@ -43,8 +55,12 @@ Người dùng chê phong cách thẻ neon là "AI slop": mọi thứ cùng mộ
 | Broker | `ServerUnit` | tủ máy chủ 2U, đèn trạng thái; `down` = gạch chéo đỏ |
 | Producer | `ProducerBox` | cửa sổ terminal có dòng lệnh |
 | Tin đang bay | `MessageCell` | một ô cùng kiểu với ô của dải log |
-| Consumer | `ConsumerCaret` | mũi tam giác dưới dải log + tên + offset |
-| Luồng / quan hệ | `Wire` | mũi tên mảnh, nhãn ở giữa |
+| Consumer (vị trí đọc) | `ConsumerCaret` | mũi tam giác dưới dải log + tên + offset |
+| Consumer (người làm việc) | `ConsumerUnit` | khối có khe nhận tin, đèn, ô partition được giao, thanh tiến độ `busy`; `idle` = rảnh, `down` = bị loại |
+| Dòng tin chạy | `Packets` | ô nhỏ bay liên tục from → to (cung nhẹ, ease) — dùng cho mọi luồng dữ liệu đang chạy |
+| Yêu cầu / phản hồi | `Envelope` | một nhãn bay một lần (JoinGroup, SyncGroup, Fetch…) |
+| Xuất hiện | `Rise` | bọc phần tử: mờ → hiện, nhô lên 28px, nảy nhẹ |
+| Luồng / quan hệ | `Wire` | mũi tên mảnh, nhãn ở giữa; `flow={t}` = nét đứt chạy cho kết nối đang sống |
 | Chú thích | `Note` | chấm + đường dẫn gấp khúc + chữ, như chú thích bản vẽ |
 | Câu chốt | `Statement` | chữ lớn phẳng, một màu, không phát sáng |
 
@@ -52,7 +68,8 @@ Người dùng chê phong cách thẻ neon là "AI slop": mọi thứ cùng mộ
 - Bố cục theo **cấu trúc thật** của cơ chế (ví dụ hai dải log leader/follower đặt song song để thấy độ lệch), không xếp thẻ thành hàng cho có.
 - Người xem phải **thấy cơ chế mà không cần đọc chữ**: trạng thái nằm ở hình (ô đỏ nét đứt = mất, con trỏ vàng = đang chép, gạch chéo = chết). Chữ chỉ là chú thích ngắn bằng `Note`.
 - Màu (`INK`): nền `#0b0f17`, nét `#3a4458`, chữ `#d6dbe4`; một màu nhấn `accent` xanh cho thứ đang được nói tới; `warn` vàng cho tiến trình; `bad` đỏ cho mất/lỗi; `good` xanh lá cho đúng/xong. Không phát sáng, không gradient, nét 2px.
-- Camera chuyển động chậm và ít (đẩy vào nhẹ ở khoảnh khắc chính), vì sơ đồ cần đứng yên để đọc.
+- **Hình phải sống** (chuẩn từ bài Consumer group): dữ liệu đang chảy thì vẽ `Packets` chạy trên dây, phần tử mới hiện bằng `Rise`, yêu cầu mạng là `Envelope` bay. Không để cảnh đứng im cả câu thoại.
+- Camera: mỗi câu thoại đẩy vào đúng vật đang được nói (zoom 1.1–1.3), rồi lùi ra toàn cảnh khi cần so sánh. Khi camera đẩy vào vùng trên cùng, đặt `TitleCard until={…}` để tiêu đề mờ đi, không đè lên hình.
 - Vẫn giữ: `TitleCard` mở cảnh, đồng bộ theo `cue.at(k)`, soát ảnh tĩnh theo §6.
 
 ## 3b. Quy tắc phong cách cũ (thẻ neon — các bài đã làm trước 09/11)
@@ -168,6 +185,7 @@ Các hiệu ứng sau đã có sẵn trong kit, mọi video tự có, không c�
 | `npm run dev` | Web khoá học (Vite) |
 | `npm run voice [-- <slug>]` | Thu âm giọng Hải Đăng (VieNeu). `TTS_VOICE="Tên"` để đổi giọng. |
 | `npm run sfx` | Tổng hợp lại hiệu ứng âm thanh vào `public/sfx/` |
+| `npm run qa -- <slug> [giây]` | Render mọi video của bài, lấy mẫu mỗi vài giây, ghép thành ảnh soát `out/qa/<slug>/*.png` (dùng cho bước soát bằng Sonnet) |
 | `npm run stills -- <id> <frame...>` | Render ảnh tĩnh để soát |
 | `npm run studio` | Mở Remotion Studio |
 | `npm run render -- <id> out/x.mp4` | Xuất MP4 (phụ đề in sẵn ở dải dưới) |
