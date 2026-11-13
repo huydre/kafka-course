@@ -1,6 +1,21 @@
 import { useState, type FC } from 'react'
 import { POS, SIZES, TOTAL } from '../lessons/sparse-index-data'
 import { textHash } from '../player/text-hash'
+import CommitLab from './labs/commit-lab'
+import DeliveryLab from './labs/delivery-lab'
+import TxnLab from './labs/txn-lab'
+import CompactionLab from './labs/compaction-lab'
+import TieredLab from './labs/tiered-lab'
+import SchemaLab from './labs/schema-lab'
+import ConnectLab from './labs/connect-lab'
+import StreamsLab from './labs/streams-lab'
+import MonitorLab from './labs/monitor-lab'
+import SizingLab from './labs/sizing-lab'
+import IncidentLab from './labs/incident-lab'
+import OutboxLab from './labs/outbox-lab'
+import EventLab from './labs/event-lab'
+import RetryLab from './labs/retry-lab'
+import CapstoneLab from './labs/capstone-lab'
 
 function Stat({ label, value, tone = '' }: { label: string; value: string; tone?: string }) {
   return (
@@ -439,4 +454,185 @@ function ElectionLab() {
   )
 }
 
-export const WIDGETS: Record<string, FC> = { 'election-lab': ElectionLab, 'hw-lab': HwLab, 'linger-lab': LingerLab, 'partition-calculator': PartitionCalculator,  'sparse-lab': SparseLab, 'partition-lab': PartitionLab, 'retention-lab': RetentionLab }
+/** Consumer group lab: who gets which partition under Range / RoundRobin, who idles, and does the team keep up. */
+function GroupLab() {
+  const WRITE = 1000
+  const SPEED = 300
+  const [topics, setTopics] = useState(1)
+  const [parts, setParts] = useState(4)
+  const [consumers, setConsumers] = useState(3)
+  const [strategy, setStrategy] = useState<'range' | 'roundrobin'>('range')
+  const all = Array.from({ length: topics }, (_, ti) => Array.from({ length: parts }, (_, p) => ({ topic: String.fromCharCode(88 + ti), p }))).flat()
+  const owned: { topic: string; p: number }[][] = Array.from({ length: consumers }, () => [])
+  if (strategy === 'roundrobin') all.forEach((tp, i) => owned[i % consumers].push(tp))
+  else
+    for (let ti = 0; ti < topics; ti++) {
+      const base = Math.floor(parts / consumers)
+      const extra = parts % consumers
+      let p = 0
+      for (let c = 0; c < consumers; c++) {
+        const n = base + (c < extra ? 1 : 0)
+        for (let k = 0; k < n; k++) owned[c].push({ topic: String.fromCharCode(88 + ti), p: p++ })
+      }
+    }
+  const perPartition = WRITE / all.length
+  const read = owned.reduce((sum, list) => sum + Math.min(SPEED, list.length * perPartition), 0)
+  const idle = owned.filter((l) => l.length === 0).length
+  const max = Math.max(...owned.map((l) => l.length), 1)
+  const growth = Math.round(WRITE - read)
+  return (
+    <div className="wg">
+      <div className="wg-head">
+        <span className="wg-badge">Mô phỏng</span>
+        <h4>Chia partition trong consumer group</h4>
+      </div>
+      <div className="wg-controls">
+        <label>
+          <span>Số topic: <b>{topics}</b></span>
+          <input type="range" min={1} max={3} value={topics} onChange={(e) => setTopics(+e.target.value)} />
+        </label>
+        <label>
+          <span>Partition mỗi topic: <b>{parts}</b></span>
+          <input type="range" min={1} max={12} value={parts} onChange={(e) => setParts(+e.target.value)} />
+        </label>
+        <label>
+          <span>Số consumer: <b>{consumers}</b></span>
+          <input type="range" min={1} max={10} value={consumers} onChange={(e) => setConsumers(+e.target.value)} />
+        </label>
+        <label>
+          <span>
+            Thuật toán:{' '}
+            <select className="wg-input" value={strategy} onChange={(e) => setStrategy(e.target.value as 'range' | 'roundrobin')}>
+              <option value="range">RangeAssignor</option>
+              <option value="roundrobin">RoundRobinAssignor</option>
+            </select>
+          </span>
+        </label>
+      </div>
+      <div className="wg-assign">
+        {owned.map((list, c) => {
+          const load = list.length * perPartition
+          return (
+            <div key={c} className={`wg-assign-row ${list.length === 0 ? 'is-idle' : load > SPEED ? 'is-heavy' : ''}`}>
+              <span>C{c + 1}</span>
+              <div className="wg-assign-track">
+                <div className="wg-assign-bar" style={{ width: `${(list.length / max) * 100}%` }} />
+              </div>
+              <span>{list.length ? list.map((x) => `${topics > 1 ? x.topic : 'P'}${x.p}`).join(' ') : 'ngồi chơi'}</span>
+            </div>
+          )
+        })}
+      </div>
+      <div className="wg-stats">
+        <Stat label="Consumer ngồi chơi" value={`${idle}`} tone={idle ? 'bad' : 'good'} />
+        <Stat label="Lệch tải (nhiều nhất / ít nhất)" value={`${max} / ${Math.min(...owned.map((l) => l.length))}`} />
+        <Stat label="Đội đọc được" value={`${Math.round(read)} / ${WRITE} tin/s`} tone={growth > 0 ? 'bad' : 'good'} />
+        <Stat label="Lag" value={growth > 0 ? `tăng ${growth} tin/s` : 'theo kịp'} tone={growth > 0 ? 'bad' : 'good'} />
+      </div>
+      <p className="wg-note">Ghi tổng {WRITE} tin/giây, mỗi consumer xử lý tối đa {SPEED} tin/giây. Thử 4 partition với 5 consumer, rồi 3 topic × 5 partition với 2 consumer và đổi Range ↔ RoundRobin.</p>
+    </div>
+  )
+}
+
+/** Rebalance lab: an event + strategy + static membership + session timeout → when, how long unread, how much pauses. */
+function RebalanceLab() {
+  type Ev = 'join' | 'leave' | 'kill' | 'stuck' | 'deploy'
+  const [ev, setEv] = useState<Ev>('join')
+  const [coop, setCoop] = useState(false)
+  const [stat, setStat] = useState(false)
+  const [session, setSession] = useState(45)
+  const RESTART = 30
+  const PARTS = 8
+  // 4 consumers × 2 partitions; a change moves 2 partitions under cooperative-sticky.
+  const pausedDuringRebalance = coop ? 2 : PARTS
+  let when = ''
+  let unread = '0 giây'
+  let count = 1
+  if (ev === 'join') when = 'ngay (JoinGroup)'
+  if (ev === 'leave') {
+    when = stat ? `sau ${session} giây (static không gửi LeaveGroup)` : 'ngay (LeaveGroup)'
+    unread = stat ? `2 partition × ${session} giây` : '0 giây'
+  }
+  if (ev === 'kill') {
+    when = `sau ${session} giây (hết nhịp tim)`
+    unread = `2 partition × ${session} giây`
+  }
+  if (ev === 'stuck') {
+    when = 'sau 300 giây (max.poll.interval.ms)'
+    unread = '2 partition × 300 giây'
+  }
+  if (ev === 'deploy') {
+    const kept = stat && session > RESTART
+    count = kept ? 0 : 8
+    when = kept ? `không rebalance (pod về sau ${RESTART}s < ${session}s)` : `${count} lần (mỗi pod tắt + bật)`
+    unread = kept ? `2 partition × ${RESTART} giây, lần lượt từng pod` : '0 giây'
+  }
+  const events: [Ev, string][] = [
+    ['join', 'Thêm consumer'],
+    ['leave', 'Tắt gọn (Ctrl+C)'],
+    ['kill', 'kill -9 / mất mạng'],
+    ['stuck', 'Kẹt trong process()'],
+    ['deploy', 'Rolling restart 4 pod'],
+  ]
+  return (
+    <div className="wg">
+      <div className="wg-head">
+        <span className="wg-badge">Mô phỏng</span>
+        <h4>Tình huống rebalance (4 consumer, 8 partition)</h4>
+      </div>
+      <div className="wg-controls">
+        <label>
+          <span>
+            Sự kiện:{' '}
+            <select className="wg-input" value={ev} onChange={(e) => setEv(e.target.value as Ev)}>
+              {events.map(([v, l]) => (
+                <option key={v} value={v}>
+                  {l}
+                </option>
+              ))}
+            </select>
+          </span>
+        </label>
+        <label>
+          <span>session.timeout.ms: <b>{session} giây</b></span>
+          <input type="range" min={10} max={300} step={5} value={session} onChange={(e) => setSession(+e.target.value)} />
+        </label>
+        <label>
+          <span>
+            <input type="checkbox" checked={coop} onChange={(e) => setCoop(e.target.checked)} /> CooperativeStickyAssignor
+          </span>
+        </label>
+        <label>
+          <span>
+            <input type="checkbox" checked={stat} onChange={(e) => setStat(e.target.checked)} /> group.instance.id (static)
+          </span>
+        </label>
+      </div>
+      <div className="wg-stats">
+        <Stat label="Group chia lại" value={when} />
+        <Stat label="Số lần rebalance" value={`${count}`} tone={count ? (count > 1 ? 'bad' : '') : 'good'} />
+        <Stat label="Không ai đọc" value={unread} tone={unread === '0 giây' ? 'good' : 'bad'} />
+        <Stat label="Dừng trong lúc chia" value={count ? `${pausedDuringRebalance}/${PARTS} partition` : '0'} tone={count && !coop ? 'bad' : 'good'} />
+      </div>
+      <p className="wg-note">Thử: kill -9 với session 45 rồi 10 giây; rolling restart có và không có static membership; bật cooperative để thấy số partition phải dừng giảm từ 8 xuống 2.</p>
+    </div>
+  )
+}
+
+export const WIDGETS: Record<string, FC> = {
+  'commit-lab': CommitLab,
+  'delivery-lab': DeliveryLab,
+  'txn-lab': TxnLab,
+  'compaction-lab': CompactionLab,
+  'tiered-lab': TieredLab,
+  'schema-lab': SchemaLab,
+  'connect-lab': ConnectLab,
+  'streams-lab': StreamsLab,
+  'monitor-lab': MonitorLab,
+  'sizing-lab': SizingLab,
+  'incident-lab': IncidentLab,
+  'outbox-lab': OutboxLab,
+  'event-lab': EventLab,
+  'retry-lab': RetryLab,
+  'capstone-lab': CapstoneLab,
+  'rebalance-lab': RebalanceLab, 'group-lab': GroupLab, 'election-lab': ElectionLab, 'hw-lab': HwLab, 'linger-lab': LingerLab, 'partition-calculator': PartitionCalculator,  'sparse-lab': SparseLab, 'partition-lab': PartitionLab, 'retention-lab': RetentionLab }

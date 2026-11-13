@@ -20,7 +20,8 @@ export function CourseSidebar({ title, lessons, planned, current, completed, col
     ...lessons.map((l) => ({ module: l.module, title: l.title, slug: l.slug as string | undefined })),
     ...planned.map((p) => ({ module: p.module, title: p.title, slug: undefined })),
   ].filter((i) => !q || i.title.toLowerCase().includes(q))
-  const modules = [...new Set(items.map((i) => i.module))].sort()
+  // natural order so "Module 10" comes after "Module 9", not after "Module 1"
+  const modules = [...new Set(items.map((i) => i.module))].sort((a, b) => a.localeCompare(b, 'vi', { numeric: true }))
 
   return (
     <aside className={`sb${collapsed ? ' is-collapsed' : ''}`}>
