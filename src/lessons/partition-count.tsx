@@ -1,393 +1,411 @@
-import {
-  At,
-  Burst,
-  CashierIcon,
-  CheckoutCounter,
-  CodeWindow,
-  Kinetic,
-  NEON,
-  Panel,
-  PersonIcon,
-  Pill,
-  Scene,
-  ShopperIcon,
-  Stamp,
-  SummaryGrid,
-  TitleCard,
-  cameraAt,
-  clamp,
-  glow,
-  lerp,
-  sp,
-  span,
-  vis,
-  type Neon,
-} from '../player/motion-kit'
-import type { Cue, Lesson, Scene as LessonScene } from '../player/types'
+import type { ReactNode } from 'react'
+import { cameraAt, clamp, lerp, move, sp, span, vis } from '../player/motion-kit'
+import { ConsumerUnit, HERO, Icon3D, LogTape, Note, Packets, Rise, SOFT, SOFT_PANEL, ServerUnit, SoftScene, SoftTheme, Statement, SummaryList, Wire, type Icon3DName } from '../player/schematic'
+import type { Cue, Lesson, Scene as LessonScene, SceneSfx } from '../player/types'
 import { MONO } from '../remotion/video-fonts'
 import { partitionCountScript } from './partition-count-script'
 
-const label = { fontSize: 24, fontWeight: 800, letterSpacing: 3, color: NEON.muted } as const
+/** This lesson is drawn in the navy glow style. */
+const INK = SOFT
+const panel = SOFT_PANEL
+const WIDE = { x: 960, y: 540, s: 1 }
+const fmt = (n: number) => Math.round(n).toLocaleString('vi-VN')
+/** Counters change at most 6 times per second so the motion-blurred export stays readable. */
+const snap = (t: number) => Math.floor(t * 6) / 6
+const TABULAR = { fontVariantNumeric: 'tabular-nums' } as const
+const HERO_SHADOW = '0 0 34px rgba(77,141,255,0.6), 0 24px 50px rgba(0,4,30,0.6), inset 0 2px 0 rgba(255,255,255,0.5), inset 0 -8px 16px rgba(0,10,60,0.35)'
 
-/** Stat tile used on the monitoring dashboard. */
-function Stat({ x, y, w = 400, title, value, tone, o = 1 }: { x: number; y: number; w?: number; title: string; value: string; tone: Neon; o?: number }) {
+/** Blend two #rrggbb colours (k = 0 gives a, 1 gives b): state changes glide instead of snapping. */
+const rgb = (c: string) => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16))
+const mix = (a: string, b: string, k: number) => {
+  const x = rgb(a)
+  const y = rgb(b)
+  return `rgb(${x.map((v, i) => Math.round(lerp(v, y[i], clamp(k)))).join(',')})`
+}
+
+/** Two values stacked in one slot; `m` 0 to 1 cross-fades from a to b (text that changes at a narrated moment). */
+function Cross({ a, b, m, w, align = 'center' }: { a: ReactNode; b: ReactNode; m: number; w: number; align?: 'left' | 'center' | 'right' }) {
+  const layer = { position: 'absolute', left: 0, right: 0, top: 0, textAlign: align, whiteSpace: 'nowrap' } as const
   return (
-    <At x={x} y={y} style={{ opacity: clamp(o) }}>
-      <div style={{ width: w, padding: '22px 28px', borderRadius: 20, background: 'rgba(255,255,255,0.04)', border: `2px solid ${NEON[tone]}55` }}>
-        <div style={label}>{title}</div>
-        <div style={{ fontSize: 64, fontWeight: 900, color: NEON[tone], textShadow: glow(NEON[tone], 0.45), fontFamily: MONO, whiteSpace: 'nowrap' }}>{value}</div>
-      </div>
-    </At>
+    <span style={{ position: 'relative', display: 'inline-block', width: w, height: '1.2em', lineHeight: 1.2, verticalAlign: 'middle' }}>
+      <span style={{ ...layer, opacity: 1 - clamp(m) }}>{a}</span>
+      <span style={{ ...layer, opacity: clamp(m) }}>{b}</span>
+    </span>
+  )
+}
+
+/** Offset ticks are under 24px in the kit, so the tapes here print none (the kit only renders the returned value as text). */
+const NO_OFFSET = (() => '') as unknown as (i: number) => number
+
+/** One partition: label P{p} and a tape of equal cells, the newest message glowing at the end. */
+function Tape({ x, y, p, cells, cellW }: { x: number; y: number; p: number; cells: number; cellW: number }) {
+  return (
+    <div>
+      <div style={{ position: 'absolute', left: x - 62, top: y + 16, fontSize: 30, fontWeight: 700, color: INK.text }}>P{p}</div>
+      <LogTape x={x} y={y} cells={cells} cellW={cellW} state={(i) => (i < cells - 1 ? 'filled' : 'new')} offsetOf={NO_OFFSET} />
+    </div>
+  )
+}
+
+/** A label + value card in the soft style; `hot` (0..1) glides its outline and value to the warning colour. */
+function Stat({ x, y, w, h, title, hot = 0, children }: { x: number; y: number; w: number; h: number; title: string; hot?: number; children: ReactNode }) {
+  return (
+    <div style={{ ...INK.card, position: 'absolute', left: x, top: y, width: w, height: h, boxSizing: 'border-box', padding: '18px 28px', border: `1.5px solid ${mix('#6ea0ff', INK.bad, hot)}`, boxShadow: `0 0 ${12 + 30 * hot}px rgba(${hot > 0 ? '255,90,106' : '61,123,255'},${0.35 + 0.35 * hot}), 0 24px 50px rgba(0,4,30,0.55), inset 0 1px 0 rgba(255,255,255,0.18)` }}>
+      <div style={{ fontSize: 26, fontWeight: 700, color: INK.faint, whiteSpace: 'nowrap' }}>{title}</div>
+      {children}
+    </div>
   )
 }
 
 /* ------------------------------------------------------------------ 0. cold open: 2am incident */
 
+const HOOK_ROW = (p: number) => 170 + p * 135
+
 function hook(t: number, c: Cue) {
   const [a0, a1, a2] = [c.at(0), c.at(1), c.at(2)]
   const scaleAt = a1 + 1.0
-  const consumers = t >= scaleAt ? 10 : 6
   // Lag keeps climbing; after scaling out it only bends slightly, it never comes down.
   const lagAt = (x: number) => 1_750_000 + x * 160_000 - (x > scaleAt ? (x - scaleAt) * 25_000 : 0)
-  const lag = Math.round(lagAt(t) / 1000) * 1000
-  const chart = Array.from({ length: 60 }, (_, i) => {
-    const x = (i / 59) * Math.min(t, c.duration)
-    return `${80 + (i / 59) * 1400 * span(t, 0, c.duration)},${700 - (lagAt(x) - 1_600_000) / 6500}`
-  }).join(' ')
-  const cam = cameraAt(t, [
-    [0, { x: 420, y: 320, s: 1.5, rx: 14, r: -2 }],
-    [a0 + 0.4, { x: 960, y: 560, s: 0.95 }, 2.4],
-    [a1 + 0.6, { x: 860, y: 700, s: 1.12, ry: 5 }, 1.2],
-    [a2 + 0.4, { x: 1330, y: 320, s: 1.55, ry: -6 }, 1.3],
-  ])
+  const lag = Math.round(lagAt(snap(t)) / 1000) * 1000
+  const hot = span(lagAt(t), 1_900_000, 2_050_000)
+  const swap = span(t, scaleAt, scaleAt + 0.4)
+  const W = 720
+  const H = 330
+  const shown = Math.min(t, c.duration)
+  const pts = Array.from({ length: 60 }, (_, i) => {
+    const x = (i / 59) * shown
+    return [(x / c.duration) * W, H - clamp((lagAt(x) - 1_600_000) / 8000, 0, H)] as const
+  })
+  const head = pts[pts.length - 1]
+  const focus = span(t, a2 + 0.2, a2 + 0.6)
+  const TX = 1000
+  const UX = 1290
+  const rowT = (p: number) => a0 + 1.6 + p * 0.15
   return (
-    <Scene
+    <SoftScene
       t={t}
-      camera={cam}
-      backdrop="servers"
-      overlay={
-        <>
-          <At x={1560} y={110}>
-            <Pill text="⚠  Consumer lag > 2.000.000" tone="red" size={36} o={Math.min(sp(t, a0 + 1.2), vis(t, 0, a2))} />
-          </At>
-          <At x={560} y={960} style={{ opacity: vis(t, a1, a2 + 0.2) }}>
-            <CodeWindow t={t} at={a1 + 0.1} w={900} size={28} lines={[[['$ ', '#64748b'], ['kubectl scale deploy consumer ', '#e2e8f0'], ['--replicas=10', '#fbbf24']]]} />
-          </At>
-          <At x={960} y={900} style={{ opacity: vis(t, a2 + 1.7), padding: '18px 48px', borderRadius: 28, background: 'rgba(5,7,15,0.88)', border: `3px solid ${NEON.amber}66` }}>
-            <Kinetic t={t} at={a2 + 1.8} text="thủ phạm: SỐ PARTITION" size={92} color="#fde68a" glowColor={NEON.amber} />
-          </At>
-        </>
-      }
+      camera={cameraAt(t, [
+        [0, { x: 740, y: 420, s: 1.3 }],
+        [a0 + 1.2, WIDE, 1.6],
+        [a2, { x: 1000, y: 540, s: 1.04 }, 1.3],
+      ])}
     >
-      <At x={960} y={560}>
-        <Panel t={t} at={0} w={1560} h={840} tone={t >= a0 + 1.2 ? 'red' : 'blue'}>
-          {/* Coordinates below are relative to the panel's top-left corner (world 180, 140). */}
-          <div style={{ ...label, position: 'absolute', left: 48, top: 30 }}>MONITORING · payments-consumer · 02:07</div>
-          <Stat x={290} y={150} w={480} title="CONSUMER LAG" value={lag.toLocaleString('vi-VN')} tone="red" />
-          <Stat x={780} y={150} title="CONSUMERS" value={String(consumers)} tone={t >= scaleAt ? 'amber' : 'sky'} o={vis(t, a0 + 0.5)} />
-          <Stat x={1220} y={150} title="PARTITIONS" value="6" tone={t >= a2 + 0.6 ? 'amber' : 'sky'} o={vis(t, a0 + 0.7)} />
-          <At x={1220} y={150}>
-            <Burst t={t} at={a2 + 0.8} tone="amber" r={230} />
-          </At>
-          <svg width={1560} height={840} style={{ position: 'absolute', left: 0, top: 0 }}>
-            <line x1={80} y1={706} x2={1480} y2={706} stroke="#334155" strokeWidth={3} />
-            <polyline points={chart} fill="none" stroke={NEON.red} strokeWidth={6} style={{ filter: `drop-shadow(0 0 8px ${NEON.red})` }} />
+      <Rise t={t} at={0.3}>
+        <Stat x={100} y={130} w={520} h={250} title="CONSUMER LAG" hot={hot}>
+          <div style={{ marginTop: 14, fontSize: 76, fontWeight: 800, letterSpacing: -1, whiteSpace: 'nowrap', color: mix('#ffffff', INK.bad, hot), ...TABULAR }}>{fmt(lag)}</div>
+          <div style={{ marginTop: 6, fontSize: 26, fontWeight: 600, color: INK.faint }}>tin chưa đọc</div>
+        </Stat>
+      </Rise>
+      <Icon3D name="bell" x={560} y={168} size={104} t={t} at={1.5} />
+      <Rise t={t} at={a0 + 0.8}>
+        <Stat x={640} y={130} w={260} h={250} title="CONSUMER">
+          <div style={{ marginTop: 14, fontSize: 110, fontWeight: 800, color: INK.text, ...TABULAR, textAlign: 'center' }}>
+            <Cross a="6" b={<span style={{ color: INK.warn }}>10</span>} m={swap} w={150} />
+          </div>
+        </Stat>
+      </Rise>
+      <Rise t={t} at={1.0}>
+        <div style={{ ...INK.card, position: 'absolute', left: 100, top: 410, width: 800, height: 480 }}>
+          <div style={{ position: 'absolute', left: 28, top: 20, fontSize: 26, fontWeight: 700, color: INK.faint }}>lag theo thời gian</div>
+          <svg width={W + 20} height={H + 20} style={{ position: 'absolute', left: 40, top: 100, overflow: 'visible' }}>
+            <line x1={0} y1={H} x2={W} y2={H} stroke={INK.line} strokeWidth={2} />
+            <line x1={0} y1={H - 50} x2={W} y2={H - 50} stroke={INK.warn} strokeWidth={2} strokeDasharray="10 10" opacity={0.8} />
+            <text x={W} y={H - 62} textAnchor="end" fontFamily="Be Vietnam Pro, sans-serif" fontWeight={700} fontSize={26} fill={INK.warn}>
+              2.000.000
+            </text>
+            <line x1={(scaleAt / c.duration) * W} y1={0} x2={(scaleAt / c.duration) * W} y2={H} stroke={INK.accent} strokeWidth={2} strokeDasharray="6 8" opacity={vis(t, scaleAt)} />
+            <text x={(scaleAt / c.duration) * W - 12} y={30} textAnchor="end" fontFamily="Be Vietnam Pro, sans-serif" fontWeight={700} fontSize={26} fill={INK.accent} opacity={vis(t, scaleAt)}>
+              thêm consumer
+            </text>
+            <polyline points={pts.map((p) => p.join(',')).join(' ')} fill="none" stroke={INK.bad} strokeWidth={5} strokeLinejoin="round" style={{ filter: `drop-shadow(0 0 8px ${INK.bad})` }} />
+            <circle cx={head[0]} cy={head[1]} r={9} fill={INK.bad} style={{ filter: `drop-shadow(0 0 8px ${INK.bad})` }} />
           </svg>
-          {Array.from({ length: 10 }, (_, i) => {
-            const shown = i < 6 || t >= scaleAt + i * 0.08
-            return (
-              <At key={i} x={380 + i * 90} y={770} style={{ opacity: shown ? clamp(sp(t, i < 6 ? a0 + 0.8 : scaleAt + (i - 6) * 0.12)) : 0 }}>
-                <PersonIcon size={52} idle={i >= 6 && t >= scaleAt + 1.2} t={t} />
-              </At>
-            )
-          })}
-          <At x={1300} y={770}>
-            <Pill text="4 consumer mới… ngồi chơi" tone="amber" size={28} o={Math.min(sp(t, scaleAt + 1.4), vis(t, 0, a2 + 0.3))} />
-          </At>
-        </Panel>
-      </At>
-    </Scene>
+        </div>
+      </Rise>
+      <div style={{ ...panel, left: 100, top: 925, fontFamily: MONO, fontSize: 28, fontWeight: 600, whiteSpace: 'nowrap', opacity: vis(t, a1 + 0.1) }}>
+        <span style={{ color: INK.faint }}>$ </span>kubectl scale --replicas=<span style={{ color: INK.warn }}>10</span>
+      </div>
+
+      <div style={{ position: 'absolute', left: 940, top: 96, fontSize: 30, fontWeight: 800, whiteSpace: 'nowrap', color: mix(INK.faint, INK.warn, focus), opacity: vis(t, a0 + 1.4) }}>topic payments · 6 partition</div>
+      <div style={{ position: 'absolute', left: 925, top: 150, width: 255, height: 810, borderRadius: 28, border: `3px solid ${INK.warn}`, boxShadow: `0 0 26px ${INK.warn}88`, opacity: focus }} />
+      {[0, 1, 2, 3, 4, 5].map((p) => (
+        <div key={p}>
+          <Rise t={t} at={rowT(p)}>
+            <Tape x={TX} y={HOOK_ROW(p)} p={p} cells={3} cellW={50} />
+          </Rise>
+          <Wire from={{ x: TX + 160, y: HOOK_ROW(p) + 35 }} to={{ x: UX - 14, y: HOOK_ROW(p) + 35 }} color={INK.line} p={move(t, rowT(p) + 0.3, 0.45)} flow={t} />
+          <Packets t={t} from={{ x: TX + 160, y: HOOK_ROW(p) + 35 }} to={{ x: UX - 14, y: HOOK_ROW(p) + 35 }} start={rowT(p) + 0.7} every={0.5} len={0.8} size={18} />
+          <Rise t={t} at={rowT(p) + 0.2}>
+            <ConsumerUnit x={UX} y={HOOK_ROW(p) - 24} w={270} name={`C${p + 1}`} parts={[`P${p}`]} t={t} busy={(t * 1.3 + p * 0.17) % 1} />
+          </Rise>
+        </div>
+      ))}
+      {[0, 1, 2, 3].map((k) => (
+        <Rise key={k} t={t} at={scaleAt + 0.2 + k * 0.25}>
+          <ConsumerUnit x={1580} y={HOOK_ROW(k) - 24} w={310} name={`C${k + 7}`} idle t={t} />
+        </Rise>
+      ))}
+      <Statement x={940} y={966} text="thủ phạm: số partition = 6" color={INK.warn} size={42} o={sp(t, a2 + 0.8)} />
+    </SoftScene>
   )
 }
 
 /* ------------------------------------------------------------------ 1. partitions = the ceiling on parallelism */
 
-/* Shared row layout for the side-by-side analogy: row i of the supermarket mirrors partition i. Coordinates are
-   relative to each 860×860 panel. */
-const ROW_Y = (i: number) => 175 + i * 140
-const IDLE_Y = 770
-
-/** Message chips flowing along a lane (or shoppers along a queue), looping; `start` = when the flow begins. */
-const flowX = (t: number, start: number, k: number, from: number, to: number, speed = 95) => from + (((t - start) * speed + k * 150) % (to - from))
-
 function parallel(t: number, c: Cue) {
   const [a0, a1, a2] = [c.at(0), c.at(1), c.at(2)]
-  const kafkaRow = (i: number) => a0 + 0.6 + i * 0.35
-  const shopRow = (i: number) => a1 - 0.2 + i * 0.25
-  const cam = cameraAt(t, [
-    [0, { x: 1440, y: 560, s: 1.16, ry: -8 }],
-    [a0 + 0.3, { x: 1440, y: 560, s: 1.08 }, 1.6],
-    [a1 - 0.3, { x: 480, y: 560, s: 1.08, ry: 6 }, 1.3],
-    [a2 - 0.2, { x: 960, y: 560, s: 0.86 }, 1.4],
-  ])
-  const legend: [string, string][] = [
-    ['khách hàng', 'tin nhắn'],
-    ['quầy thu ngân', 'partition'],
-    ['thu ngân', 'consumer'],
-  ]
+  const TX = 260
+  const CW = 60
+  const CELLS = 7
+  const END = TX + CELLS * CW + 16
+  const UX = 1000
+  const row = (p: number) => 190 + p * 135
+  const uy = (k: number) => 166 + k * 135
+  const wireAt = (p: number) => a0 + 1.3 + p * 0.15
+  const idleAt = (k: number) => a1 + 2.2 + (k - 4) * 0.4
   return (
-    <Scene
+    <SoftScene
       t={t}
-      camera={cam}
-      overlay={
-        <>
-          <At x={960} y={92} style={{ display: 'flex', gap: 22 }}>
-            {legend.map(([a, b], k) => (
-              <div key={a} style={{ opacity: clamp(sp(t, a2 - 0.2 + k * 0.3)), display: 'flex', alignItems: 'center', gap: 12, padding: '12px 24px', borderRadius: 999, background: 'rgba(5,7,15,0.92)', border: '2px solid #334155', fontSize: 30, fontWeight: 800, whiteSpace: 'nowrap' }}>
-                <span style={{ color: '#fcd34d' }}>{a}</span>
-                <span style={{ color: '#64748b' }}>=</span>
-                <span style={{ color: NEON.sky }}>{b}</span>
-              </div>
-            ))}
-          </At>
-          <At x={960} y={985} style={{ opacity: vis(t, a2 + 0.5), padding: '14px 40px', borderRadius: 26, background: 'rgba(5,7,15,0.9)' }}>
-            <Kinetic t={t} at={a2 + 0.6} text="số partition = TRẦN SONG SONG" size={76} color="#bfdbfe" glowColor={NEON.blue} stagger={0.02} />
-          </At>
-        </>
-      }
+      camera={cameraAt(t, [
+        [0, { x: 960, y: 520, s: 1.04 }],
+        [a0 + 1.2, { x: 1000, y: 450, s: 1.1 }, 1.3],
+        [a1, { x: 960, y: 640, s: 1.07 }, 1.3],
+        [a2, WIDE, 1.3],
+      ])}
     >
-      {/* ---------------- left: supermarket */}
-      <At x={480} y={560}>
-        <Panel t={t} at={a1 - 0.6} w={860} h={860} tone="amber" still>
-          <div style={{ ...label, position: 'absolute', left: 40, top: 30, color: '#fcd34d' }}>SIÊU THỊ · 4 QUẦY · 6 THU NGÂN</div>
-          {[0, 1, 2, 3].map((i) => {
-            const on = t >= shopRow(i)
-            return (
-              <div key={i} style={{ opacity: clamp(sp(t, shopRow(i))) }}>
-                <div style={{ position: 'absolute', left: 40, right: 360, top: ROW_Y(i) + 30, height: 6, borderRadius: 3, background: 'repeating-linear-gradient(90deg,#3f3f46 0 18px,transparent 18px 30px)' }} />
-                {on &&
-                  [0, 1].map((k) => {
-                    const x = flowX(t, shopRow(i), k + i * 0.4, 10, 330, 70)
-                    return (
-                      <div key={k} style={{ position: 'absolute', left: x, top: ROW_Y(i) - 66, opacity: Math.min(span(x, 20, 60), 1 - span(x, 280, 330)) }}>
-                        <ShopperIcon size={82} t={t + k} />
-                      </div>
-                    )
-                  })}
-                <div style={{ position: 'absolute', left: 440, top: ROW_Y(i) - 76 }}>
-                  <CheckoutCounter w={250} t={t + i} active={on} />
-                  <div style={{ position: 'absolute', left: 8, top: -6, fontSize: 20, fontWeight: 800, color: '#94a3b8' }}>Quầy {i + 1}</div>
-                </div>
-                <div style={{ position: 'absolute', left: 712, top: ROW_Y(i) - 84 }}>
-                  <CashierIcon size={96} t={t + i} />
-                </div>
-              </div>
-            )
-          })}
-          <div style={{ position: 'absolute', left: 40, right: 40, top: IDLE_Y - 70, borderTop: '2px dashed #57534e' }} />
-          <div style={{ position: 'absolute', left: 560, top: IDLE_Y - 40, opacity: clamp(sp(t, a1 + 1.4)), display: 'flex', gap: 40 }}>
-            <CashierIcon size={96} idle t={t} />
-            <CashierIcon size={96} idle t={t + 1} />
-          </div>
-          <div style={{ position: 'absolute', left: 540, top: IDLE_Y + 58, width: 260, height: 16, borderRadius: 6, background: '#57534e', opacity: clamp(sp(t, a1 + 1.4)) }} />
-          <div style={{ position: 'absolute', left: 60, top: IDLE_Y - 20 }}>
-            <Pill text="không còn quầy → ngồi chơi" tone="amber" size={30} o={sp(t, a1 + 1.9)} />
-          </div>
-        </Panel>
-      </At>
+      <div style={{ position: 'absolute', left: TX, top: 134, fontSize: 26, fontWeight: 700, color: INK.faint, opacity: vis(t, a0) }}>topic · 4 partition</div>
+      <div style={{ position: 'absolute', left: UX, top: 110, fontSize: 26, fontWeight: 700, color: INK.faint, opacity: vis(t, a0 + 0.8) }}>nhóm consumer</div>
+      {[0, 1, 2, 3].map((p) => (
+        <div key={p}>
+          <Rise t={t} at={a0 + 0.1 + p * 0.15}>
+            <Tape x={TX} y={row(p)} p={p} cells={CELLS} cellW={CW} />
+          </Rise>
+          <Wire from={{ x: END, y: row(p) + 35 }} to={{ x: UX - 14, y: row(p) + 35 }} color={INK.line} p={move(t, wireAt(p), 0.5)} flow={t} />
+          <Packets t={t} from={{ x: END, y: row(p) + 35 }} to={{ x: UX - 14, y: row(p) + 35 }} start={wireAt(p) + 0.4} every={0.5} len={0.8} size={18} />
+          <Rise t={t} at={a0 + 0.9 + p * 0.2}>
+            <ConsumerUnit x={UX} y={uy(p)} w={380} name={`C${p + 1}`} parts={[`P${p}`]} t={t} busy={(t * 1.2 + p * 0.21) % 1} />
+          </Rise>
+        </div>
+      ))}
+      <Note x={(END + UX) / 2} y={row(0) + 35} dx={-40} dy={-80} text="mỗi partition → đúng một consumer" color={INK.accent} o={vis(t, a0 + 2.4, a1 - 0.3)} />
+      <div style={{ position: 'absolute', left: 0, top: 0, opacity: vis(t, a0 + 3.4, a1 - 0.3) }}>
+        <Icon3D name="lock" x={1620} y={260} size={150} t={t} at={a0 + 3.4} />
+        <div style={{ ...panel, left: 1420, top: 370, fontSize: 28, whiteSpace: 'nowrap' }}>giữ thứ tự trong partition</div>
+      </div>
 
-      {/* ---------------- right: Kafka, same rows */}
-      <At x={1440} y={560}>
-        <Panel t={t} at={0} w={860} h={860} tone="blue" still>
-          <div style={{ ...label, position: 'absolute', left: 40, top: 30 }}>KAFKA · 4 PARTITION · 6 CONSUMER</div>
-          {[0, 1, 2, 3].map((i) => {
-            const on = t >= kafkaRow(i)
-            return (
-              <div key={i} style={{ opacity: clamp(sp(t, i * 0.12)) }}>
-                <div style={{ position: 'absolute', left: 40, top: ROW_Y(i) - 40, width: 560, height: 80, borderRadius: 18, border: `3px solid ${NEON.sky}`, background: 'repeating-linear-gradient(90deg, rgba(96,165,250,0.08) 0 40px, transparent 40px 80px), linear-gradient(180deg,#132a5c,#0b1630)', backgroundPosition: `${t * 70}px 0, 0 0` }}>
-                  <span style={{ position: 'absolute', left: 16, top: 18, fontSize: 32, fontWeight: 900 }}>P{i}</span>
-                </div>
-                {on &&
-                  [0, 1, 2].map((k) => {
-                    const x = flowX(t, kafkaRow(i), k, 110, 560, 120)
-                    return (
-                      <div key={k} style={{ position: 'absolute', left: x, top: ROW_Y(i) - 20, width: 60, height: 40, borderRadius: 10, background: 'linear-gradient(180deg,#2563eb,#1e3a8a)', border: `2px solid ${NEON.sky}`, opacity: Math.min(span(x, 110, 140), 1 - span(x, 520, 560)) }} />
-                    )
-                  })}
-                <svg width={80} height={20} style={{ position: 'absolute', left: 602, top: ROW_Y(i) - 10, opacity: vis(t, kafkaRow(i)) }}>
-                  <path d="M0 10 H70 M60 2 L72 10 L60 18" fill="none" stroke="#475569" strokeWidth={4} />
-                </svg>
-                <div style={{ position: 'absolute', left: 680, top: ROW_Y(i) - 56, opacity: clamp(sp(t, kafkaRow(i))), display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                  <PersonIcon size={70} color={NEON.sky} t={t} />
-                  <span style={{ fontSize: 22, fontWeight: 900, color: '#cbd5e1' }}>C{i}</span>
-                </div>
-              </div>
-            )
-          })}
-          <div style={{ position: 'absolute', left: 40, right: 40, top: IDLE_Y - 70, borderTop: '2px dashed #334155' }} />
-          <div style={{ position: 'absolute', left: 600, top: IDLE_Y - 30, display: 'flex', gap: 50, opacity: clamp(sp(t, a0 + 2.4)) }}>
-            {[4, 5].map((j) => (
-              <div key={j} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                <PersonIcon size={70} idle t={t + j} />
-                <span style={{ fontSize: 22, fontWeight: 900, color: '#94a3b8' }}>C{j}</span>
-              </div>
-            ))}
-          </div>
-          <div style={{ position: 'absolute', left: 60, top: IDLE_Y - 10 }}>
-            <Pill text="không còn partition → rảnh" tone="sky" size={30} o={sp(t, a0 + 2.8)} />
-          </div>
-        </Panel>
-      </At>
+      {[4, 5].map((k) => (
+        <div key={k}>
+          <Rise t={t} at={idleAt(k)}>
+            <ConsumerUnit x={UX} y={uy(k)} w={380} name={`C${k + 1}`} idle t={t} />
+          </Rise>
+          <Icon3D name="pause" x={1460} y={uy(k) + 59} size={96} t={t} at={idleAt(k) + 1.2} />
+        </div>
+      ))}
+      <Rise t={t} at={a1 + 0.3}>
+        <div style={{ ...panel, left: 100, top: 740, whiteSpace: 'nowrap' }}>
+          quầy thu ngân <span style={{ color: INK.faint }}>=</span> <span style={{ color: INK.accent }}>partition</span>
+        </div>
+      </Rise>
+      <Rise t={t} at={a1 + 1.4}>
+        <div style={{ ...panel, left: 100, top: 818, whiteSpace: 'nowrap' }}>
+          thu ngân <span style={{ color: INK.faint }}>=</span> <span style={{ color: INK.good }}>consumer</span>
+        </div>
+      </Rise>
 
-    </Scene>
+      <div style={{ position: 'absolute', left: 1400, top: uy(0), width: 24, height: 3 * 135 + 118, borderTop: `3px solid ${INK.accent}`, borderRight: `3px solid ${INK.accent}`, borderBottom: `3px solid ${INK.accent}`, borderRadius: '0 10px 10px 0', opacity: vis(t, a2 + 0.2) }} />
+      <div style={{ position: 'absolute', left: 1456, top: 300, fontSize: 68, fontWeight: 800, letterSpacing: -1, color: INK.warn, whiteSpace: 'nowrap', opacity: vis(t, a2 + 1.2) }}>trần = 4</div>
+      <div style={{ ...panel, left: 1456, top: 420, fontSize: 28, whiteSpace: 'nowrap', opacity: vis(t, a2 + 3.2) }}>làm việc ≤ số partition</div>
+      <Statement x={100} y={910} text="số partition = TRẦN song song" size={46} o={sp(t, a2 + 0.7)} />
+    </SoftScene>
   )
 }
 
 /* ------------------------------------------------------------------ 2. formula */
 
+const CHIP = (i: number) => ({ x: 140 + (i % 10) * 166, y: 520 + Math.floor(i / 10) * 72 })
+
 function formula(t: number, c: Cue) {
   const [a0, a1, a2] = [c.at(0), c.at(1), c.at(2)]
-  const piece = (k: number) => a1 + 0.6 + k * 0.9
-  const gridAt = a1 + 4.2
-  const cam = cameraAt(t, [
-    [0, { x: 960, y: 520, s: 1.0, rx: 14 }],
-    [a1 - 0.1, { x: 960, y: 380, s: 1.2 }, 1.2],
-    [gridAt - 0.2, { x: 960, y: 560, s: 0.92, ry: 4 }, 1.3],
-    [a2 + 0.2, { x: 960, y: 760, s: 1.1, ry: -4 }, 1.3],
-  ])
-  const parts: [string, string][] = [
-    ['1000 MB/s', '#e2e8f0'],
-    ['÷', '#94a3b8'],
-    ['50 MB/s', NEON.cyan],
-    ['=', '#94a3b8'],
-    ['20', NEON.green],
-  ]
+  const mA = span(t, a1 + 1.3, a1 + 1.7)
+  const mB = span(t, a1 + 3.1, a1 + 3.5)
+  const op = { position: 'absolute', fontSize: 96, fontWeight: 800, color: INK.faint, transform: 'translate(-50%, -50%)', top: 375 } as const
+  const wrapped = (v: ReactNode) => <div style={{ marginTop: 14, fontSize: 66, fontWeight: 800, letterSpacing: -1, textAlign: 'center', whiteSpace: 'nowrap', ...TABULAR }}>{v}</div>
   return (
-    <Scene t={t} camera={cam} backdrop="blueprint" overlay={<div style={{ opacity: vis(t, -1, a1 - 0.2) }}><TitleCard t={t} at={a0} kicker="CÔNG THỨC" title="Cần bao nhiêu partition?" dock={a0 + 1.6} /></div>}>
-      <At x={960} y={250}>
-        <Pill text="partition ≥ throughput ÷ tốc độ 1 consumer" tone="sky" size={38} o={Math.min(sp(t, a0 + 1.9), vis(t, 0, a1 + 0.2))} style={{ fontFamily: MONO }} />
-      </At>
-      <At x={960} y={380} style={{ display: 'flex', alignItems: 'baseline', gap: 36 }}>
-        {parts.map(([txt, col], k) => {
-          const p = clamp(sp(t, piece(k), 12, 140), 0, 1.15)
-          return (
-            <span key={k} style={{ fontSize: k === 4 ? 150 : 96, fontWeight: 900, color: col, opacity: clamp(p * 1.4), transform: `translateY(${(1 - clamp(p)) * 50}px) scale(${lerp(0.7, 1, p)})`, display: 'inline-block', whiteSpace: 'nowrap', textShadow: k === 4 ? glow(NEON.green, 0.8) : undefined }}>
-              {txt}
-            </span>
-          )
-        })}
-      </At>
-      <At x={960} y={490} style={{ opacity: vis(t, piece(2), gridAt) }}>
-        <div style={{ fontSize: 30, fontWeight: 700, color: NEON.muted }}>mục tiêu · tốc độ một consumer xử lý (gồm cả ghi DB)</div>
-      </At>
-      {Array.from({ length: 20 }, (_, i) => {
-        const p = clamp(sp(t, gridAt + i * 0.05, 13, 150), 0, 1.1)
+    <SoftScene
+      t={t}
+      camera={cameraAt(t, [
+        [0, WIDE],
+        [a1 + 0.2, { x: 960, y: 470, s: 1.08 }, 1.3],
+        [a2, { x: 960, y: 610, s: 1.06 }, 1.3],
+      ])}
+      title={{ kicker: 'CÔNG THỨC', text: 'Cần bao nhiêu partition?', until: a1 - 0.1 }}
+    >
+      <Rise t={t} at={a0 + 1.9}>
+        <div style={{ ...panel, left: 330, top: 165, width: 1260, textAlign: 'center', fontFamily: MONO, fontSize: 38, whiteSpace: 'nowrap', boxSizing: 'border-box' }}>
+          partition <span style={{ color: INK.good }}>≥</span> throughput ÷ tốc độ 1 consumer
+        </div>
+      </Rise>
+      <Rise t={t} at={a0 + 2.6}>
+        <Stat x={120} y={270} w={500} h={210} title="throughput mục tiêu">
+          {wrapped(<Cross a={<span style={{ color: INK.faint }}>?</span>} b="1000 MB/s" m={mA} w={440} />)}
+        </Stat>
+      </Rise>
+      <Rise t={t} at={a0 + 2.9}>
+        <div style={{ ...op, left: 690 }}>÷</div>
+      </Rise>
+      <Rise t={t} at={a0 + 3.3}>
+        <Stat x={760} y={270} w={500} h={210} title="1 consumer xử lý được">
+          {wrapped(<Cross a={<span style={{ color: INK.faint }}>?</span>} b={<span style={{ color: INK.accent }}>50 MB/s</span>} m={mB} w={440} />)}
+        </Stat>
+      </Rise>
+      <Rise t={t} at={a1 + 5.0}>
+        <div style={{ ...op, left: 1330 }}>=</div>
+      </Rise>
+      <Rise t={t} at={a1 + 5.3}>
+        <div style={{ ...INK.card, position: 'absolute', left: 1400, top: 270, width: 400, height: 210, boxSizing: 'border-box', border: 'none', background: HERO, boxShadow: HERO_SHADOW, textAlign: 'center', padding: '18px 28px' }}>
+          <div style={{ fontSize: 26, fontWeight: 700, color: 'rgba(255,255,255,0.85)' }}>số partition</div>
+          <div style={{ fontSize: 120, fontWeight: 800, lineHeight: 1.05, marginTop: 6, color: '#ffffff', ...TABULAR }}>20</div>
+        </div>
+      </Rise>
+
+      <div style={{ position: 'absolute', left: 0, top: 0, opacity: vis(t, a0 + 2.9, a1 + 5.4) }}>
+        <Icon3D name="rocket" x={370} y={640} size={170} t={t} at={a0 + 2.9} />
+        <Icon3D name="computer" x={1010} y={640} size={170} t={t} at={a0 + 3.7} />
+        <Packets t={t} from={{ x: 480, y: 640 }} to={{ x: 900, y: 640 }} start={a0 + 4.0} end={a1 + 5.4} every={0.3} len={0.8} size={22} />
+      </div>
+      {Array.from({ length: 30 }, (_, i) => {
+        const extra = i >= 20
+        const at = extra ? a2 + 4.4 + (i - 20) * 0.05 : a1 + 5.8 + i * 0.05
+        const { x, y } = CHIP(i)
         return (
-          <At key={i} x={420 + (i % 10) * 120} y={580 + Math.floor(i / 10) * 160} style={{ opacity: clamp(p * 1.4), transform: `translate(-50%,-50%) scale(${lerp(0.4, 1, p)})` }}>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-              <div style={{ width: 90, height: 54, borderRadius: 12, border: `3px solid ${NEON.sky}`, background: 'linear-gradient(180deg,#1d4ed8,#172554)', display: 'grid', placeItems: 'center', fontSize: 22, fontWeight: 900 }}>P{i}</div>
-              <PersonIcon size={42} t={t} />
+          <Rise key={i} t={t} at={at} dy={16}>
+            <div style={{ position: 'absolute', left: x, top: y, width: 150, height: 58, borderRadius: 16, display: 'grid', placeItems: 'center', fontSize: 28, fontWeight: 800, color: extra ? '#3a2200' : '#ffffff', background: extra ? 'linear-gradient(160deg, #ffe3a3 0%, #ffb547 100%)' : 'linear-gradient(160deg, #78b0ff 0%, #2f66f2 55%, #1c3fc4 100%)', boxShadow: 'inset 0 2px 0 rgba(255,255,255,0.5), 0 0 14px rgba(77,141,255,0.35), 0 8px 16px rgba(0,8,50,0.45)' }}>
+              P{i}
             </div>
-          </At>
+          </Rise>
         )
       })}
-      <At x={960} y={900}>
-        <Panel t={t} at={a2 + 0.3} w={1300} h={230} tone="green" strong>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 10 }}>
-            <div style={{ fontFamily: MONO, fontSize: 40, fontWeight: 800, color: '#cbd5e1' }}>
-              ghi: 1000 ÷ 100 MB/s = 10 · đọc: <span style={{ color: NEON.green }}>20</span>
-            </div>
-            <div style={{ fontFamily: MONO, fontSize: 58, fontWeight: 900 }}>
-              max(20, 10) × 1,5 = <span style={{ color: NEON.green, textShadow: glow(NEON.green, 0.6) }}>30 partition</span>
-            </div>
+
+      <Rise t={t} at={a2 + 0.2}>
+        <div style={{ ...INK.card, position: 'absolute', left: 210, top: 770, width: 1500, height: 230, boxSizing: 'border-box', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+          <div style={{ fontSize: 38, fontWeight: 700, color: '#d6e2ff', whiteSpace: 'nowrap' }}>
+            <span style={{ opacity: vis(t, a2 + 0.3) }}>ghi: 1000 ÷ 100 MB/s</span>
+            <span style={{ opacity: vis(t, a2 + 1.6) }}> = </span>
+            <span style={{ opacity: vis(t, a2 + 1.6), color: INK.accent }}>10</span>
+            <span style={{ opacity: vis(t, a2 + 3.0) }}> · đọc: </span>
+            <span style={{ opacity: vis(t, a2 + 3.0), color: INK.accent }}>20</span>
           </div>
-        </Panel>
-      </At>
-    </Scene>
+          <div style={{ fontSize: 56, fontWeight: 800, whiteSpace: 'nowrap', opacity: vis(t, a2 + 4.0), letterSpacing: -1 }}>
+            max(20, 10) × 1,5 = <span style={{ color: INK.good, textShadow: `0 0 26px ${INK.good}` }}>30 partition</span>
+          </div>
+        </div>
+      </Rise>
+    </SoftScene>
   )
 }
 
 /* ------------------------------------------------------------------ 3. the cost of too many */
 
-function Meter({ x, y, title, value, fill, at, t }: { x: number; y: number; title: string; value: string; fill: number; at: number; t: number }) {
-  const bad = fill >= 1
+type Meter = { x: number; icon: Icon3DName; title: string; value: string; caption: string; bar: number; hot: number; limit?: number; at: number }
+
+function MeterCard({ t, m }: { t: number; m: Meter }) {
+  const { hot } = m
   return (
-    <At x={x} y={y}>
-      <Panel t={t} at={at} w={760} h={250} tone={bad ? 'red' : 'blue'} strong={bad}>
-        <div style={{ padding: '30px 40px' }}>
-          <div style={label}>{title}</div>
-          <div style={{ fontSize: 58, fontWeight: 900, marginTop: 8, color: bad ? '#fecaca' : '#fff' }}>{value}</div>
-          <div style={{ height: 22, borderRadius: 11, background: '#0f1525', marginTop: 16, overflow: 'hidden' }}>
-            <div style={{ width: `${Math.min(1, fill) * 100}%`, height: '100%', background: bad ? NEON.red : NEON.sky, boxShadow: glow(bad ? NEON.red : NEON.sky, 0.4) }} />
-          </div>
+    <Rise t={t} at={m.at}>
+      <div style={{ ...INK.card, position: 'absolute', left: m.x, top: 300, width: 520, height: 540, boxSizing: 'border-box', padding: '0 40px', border: `1.5px solid ${mix('#6ea0ff', INK.bad, hot)}`, boxShadow: `0 0 ${14 + 34 * hot}px rgba(${hot > 0 ? '255,90,106' : '61,123,255'},${0.35 + 0.35 * hot}), 0 24px 50px rgba(0,4,30,0.55), inset 0 1px 0 rgba(255,255,255,0.18)` }}>
+        <Icon3D name={m.icon} x={260} y={110} size={150} t={t} at={m.at} />
+        <div style={{ position: 'absolute', left: 0, right: 0, top: 205, textAlign: 'center', fontSize: 26, fontWeight: 700, color: INK.faint }}>{m.title}</div>
+        <div style={{ position: 'absolute', left: 0, right: 0, top: 250, textAlign: 'center', fontSize: 56, fontWeight: 800, letterSpacing: -1, whiteSpace: 'nowrap', color: mix('#ffffff', INK.bad, hot), ...TABULAR }}>{m.value}</div>
+        <div style={{ position: 'absolute', left: 40, right: 40, top: 335, textAlign: 'center', fontSize: 26, fontWeight: 600, lineHeight: 1.35, color: '#d6e2ff' }}>{m.caption}</div>
+        <div style={{ position: 'absolute', left: 40, right: 40, top: 460, height: 26, borderRadius: 13, background: 'rgba(255,255,255,0.14)' }}>
+          <div style={{ width: `${clamp(m.bar) * 100}%`, height: '100%', borderRadius: 13, background: mix(INK.accent, INK.bad, hot), boxShadow: `0 0 14px ${mix(INK.accent, INK.bad, hot)}` }} />
+          {m.limit !== undefined && (
+            <>
+              <div style={{ position: 'absolute', left: `${m.limit * 100}%`, top: -10, width: 3, height: 46, background: INK.warn }} />
+              <div style={{ position: 'absolute', left: `${m.limit * 100}%`, top: -44, transform: 'translateX(-50%)', fontSize: 24, fontWeight: 800, color: INK.warn, whiteSpace: 'nowrap' }}>32 MB</div>
+            </>
+          )}
         </div>
-      </Panel>
-    </At>
+      </div>
+    </Rise>
   )
 }
 
 function cost(t: number, c: Cue) {
   const [a0, a1, a2] = [c.at(0), c.at(1), c.at(2)]
-  const n = Math.round(10 ** lerp(1, 4, span(t, a0 + 0.3, a0 + 2.2)))
+  const n = Math.round(10 ** lerp(1, 4, span(snap(t), a0 + 0.3, a0 + 2.2)))
   const d1 = c.end(1) - a1
   const mAt = (k: number) => a1 + d1 * (0.12 + k * 0.28)
-  const grow = (k: number) => span(t, mAt(k) + 0.3, mAt(k) + 1.6)
-  const election = Math.round(lerp(0, 10000, span(t, a2 + 1.0, c.duration)))
-  const cam = cameraAt(t, [
-    [0, { x: 960, y: 420, s: 1.2, rx: 10 }],
-    [a1 - 0.2, { x: 560, y: 560, s: 1.1, ry: 6 }, 1.1],
-    [mAt(1) - 0.2, { x: 1360, y: 560, s: 1.1, ry: -6 }, 1.1],
-    [mAt(2) - 0.2, { x: 960, y: 800, s: 1.05 }, 1.1],
-    [a2 - 0.1, { x: 960, y: 560, s: 0.82 }, 1.3],
-  ])
+  const grow = (k: number, x = t) => span(x, mAt(k) + 0.3, mAt(k) + 1.6)
+  const g = [0, 1, 2].map((k) => grow(k, snap(t)))
+  const batch = Math.round(500 * (5 / 500) ** g[2])
+  const meters: Meter[] = [
+    { x: 100, icon: 'folder', title: 'FILE TRÊN ĐĨA', value: `${fmt(30000 * g[0])}+ file`, caption: 'mỗi partition là một thư mục, mỗi segment 3 file', bar: grow(0), hot: span(grow(0), 0.7, 1), at: mAt(0) },
+    { x: 700, icon: 'battery', title: 'RAM PRODUCER', value: `${Math.round(156 * g[1])} MB`, caption: 'một lô 16 KB cho mỗi partition, buffer.memory chỉ 32 MB', bar: grow(1), hot: span(grow(1), 0.2, 0.4), limit: 32 / 156, at: mAt(1) },
+    { x: 1300, icon: 'cube', title: 'MỖI LÔ TIN', value: `${batch} tin/lô`, caption: 'chia cho nhiều partition: lô nhỏ dần, nén kém', bar: 1 - 0.93 * grow(2), hot: span(grow(2), 0.4, 0.9), at: mAt(2) },
+  ]
+  const election = Math.round(lerp(0, 10000, span(snap(t), a2 + 1.6, c.duration - 0.4)))
+  const dead = span(t, a2 + 1.2, a2 + 1.6)
+  const cardsOut = 1 - span(t, a2 - 0.1, a2 + 0.3)
   return (
-    <Scene
+    <SoftScene
       t={t}
-      camera={cam}
-      backdrop="servers"
-      overlay={
-        <>
-          <At x={960} y={130} style={{ opacity: vis(t, -1, a1 - 0.1) }}>
-            <Kinetic t={t} at={a0 + 0.1} text={`${n.toLocaleString('vi-VN')} partition?`} size={110} color="#fde68a" glowColor={NEON.amber} />
-          </At>
-          <At x={960} y={960}>
-            <Stamp t={t} at={c.end(2) - 0.6} text="HỒI PHỤC CHẬM" size={76} />
-          </At>
-        </>
-      }
+      camera={cameraAt(t, [
+        [0, { x: 960, y: 330, s: 1.25 }],
+        [a0 + 2.4, WIDE, 1.4],
+        [mAt(0) - 0.2, { x: 900, y: 540, s: 1.05 }, 1.1],
+        [mAt(1) - 0.2, { x: 960, y: 540, s: 1.05 }, 1.1],
+        [mAt(2) - 0.2, { x: 1020, y: 540, s: 1.05 }, 1.1],
+        [a2 - 0.1, WIDE, 1.3],
+      ])}
     >
-      <Meter x={560} y={420} title="FILE TRÊN ĐĨA" value={`${(n * 3).toLocaleString('vi-VN')}+ file`} fill={grow(0)} at={mAt(0)} t={t} />
-      <Meter x={1360} y={420} title="RAM PRODUCER (16KB × partition)" value={`${Math.round((n * 16) / 1024)} MB > 32 MB`} fill={grow(1) * 1.1} at={mAt(1)} t={t} />
-      <Meter x={960} y={720} title="MỖI LÔ TIN" value="nhỏ dần → nén kém" fill={grow(2)} at={mAt(2)} t={t} />
-      <At x={960} y={560} style={{ opacity: vis(t, a2, Infinity) }}>
-        <div style={{ position: 'relative', width: 1500, height: 820 }}>
-          <div style={{ position: 'absolute', inset: 0, background: 'rgba(5,7,15,0.95)', borderRadius: 30 }} />
-          <div style={{ position: 'absolute', left: 120, top: 200 }}>
-            <Panel t={t} at={a2 + 0.1} w={420} h={300} tone="red" strong>
-              <div style={{ padding: 36 }}>
-                <div style={label}>BROKER 2</div>
-                <div style={{ fontSize: 120, fontWeight: 900, color: NEON.red, textAlign: 'center', textShadow: glow(NEON.red) }}>✗</div>
-              </div>
-            </Panel>
+      <Rise t={t} at={0.2}>
+        <div style={{ position: 'absolute', left: 0, top: 84, width: 1920, textAlign: 'center', fontSize: 112, fontWeight: 800, letterSpacing: -2, color: '#ffffff', textShadow: '0 0 40px rgba(91,151,255,0.55)', ...TABULAR }}>
+          {fmt(n)} <span style={{ color: INK.warn }}>partition?</span>
+        </div>
+      </Rise>
+      <div style={{ position: 'absolute', left: 0, top: 0, opacity: vis(t, a0 + 0.3, a1 + 0.1) }}>
+        {Array.from({ length: 600 }, (_, q) => {
+          const lit = q < Math.round(600 * span(snap(t), a0 + 0.3, a0 + 2.2))
+          return <div key={q} style={{ position: 'absolute', left: 160 + (q % 50) * 32, top: 340 + Math.floor(q / 50) * 40, width: 24, height: 30, borderRadius: 8, background: lit ? 'linear-gradient(160deg, #78b0ff 0%, #2f66f2 100%)' : 'rgba(12,30,96,0.55)', border: lit ? 'none' : '1.5px solid rgba(110,160,255,0.35)', boxShadow: lit ? '0 0 10px rgba(77,141,255,0.5)' : undefined }} />
+        })}
+      </div>
+      <div style={{ opacity: cardsOut }}>
+        {meters.map((m) => (
+          <MeterCard key={m.icon} t={t} m={m} />
+        ))}
+      </div>
+
+      <div style={{ opacity: vis(t, a2 + 0.1) }}>
+        <div style={{ position: 'absolute', left: 150, top: 420, transform: 'scale(1.6)', transformOrigin: '0 0' }}>
+          <div style={{ opacity: 1 - dead }}>
+            <ServerUnit x={0} y={0} name="broker 2" t={t} />
           </div>
-          <div style={{ position: 'absolute', left: 640, top: 250, width: 760 }}>
-            <div style={{ ...label, color: '#fecaca' }}>BẦU LEADER MỚI</div>
-            <div style={{ fontSize: 76, fontWeight: 900, fontFamily: MONO, marginTop: 10 }}>{election.toLocaleString('vi-VN')} / 10.000</div>
-            <div style={{ height: 26, borderRadius: 13, background: '#1e2433', marginTop: 20, overflow: 'hidden' }}>
-              <div style={{ width: `${(election / 10000) * 100}%`, height: '100%', background: NEON.amber }} />
-            </div>
-            <div style={{ fontSize: 32, fontWeight: 700, color: NEON.muted, marginTop: 18 }}>từng partition một…</div>
+          <div style={{ position: 'absolute', left: 0, top: 0, opacity: dead }}>
+            <ServerUnit x={0} y={0} name="broker 2" down t={t} />
           </div>
         </div>
-      </At>
-    </Scene>
+        <Icon3D name="fire" x={360} y={370} size={120} t={t} at={a2 + 1.4} />
+        <Wire from={{ x: 620, y: 560 }} to={{ x: 890, y: 560 }} color={INK.bad} p={move(t, a2 + 1.8, 0.5)} flow={t} />
+        <Packets t={t} from={{ x: 620, y: 560 }} to={{ x: 890, y: 560 }} start={a2 + 2.2} every={0.35} len={0.7} color={INK.bad} size={20} />
+        <div style={{ ...INK.card, position: 'absolute', left: 900, top: 370, width: 900, height: 420, boxSizing: 'border-box', padding: '34px 44px' }}>
+          <div style={{ fontSize: 30, fontWeight: 700, color: INK.faint }}>bầu leader mới cho từng partition</div>
+          <div style={{ marginTop: 22, fontSize: 104, fontWeight: 800, letterSpacing: -2, whiteSpace: 'nowrap', ...TABULAR }}>
+            {fmt(election)} <span style={{ color: INK.faint, fontSize: 60 }}>/ 10.000</span>
+          </div>
+          <div style={{ height: 28, borderRadius: 14, background: 'rgba(255,255,255,0.14)', marginTop: 28 }}>
+            <div style={{ width: `${(election / 10000) * 100}%`, height: '100%', borderRadius: 14, background: INK.warn, boxShadow: `0 0 16px ${INK.warn}` }} />
+          </div>
+          <div style={{ marginTop: 24, fontSize: 30, fontWeight: 600, color: '#d6e2ff' }}>từng partition một…</div>
+        </div>
+      </div>
+      <Icon3D name="clock" x={340} y={915} size={110} t={t} at={a2 + 3.0} />
+      <Statement x={420} y={881} text="càng nhiều partition → hồi phục càng lâu" color={INK.warn} size={52} o={sp(t, a2 + 3.0)} />
+    </SoftScene>
   )
 }
 
 /* ------------------------------------------------------------------ 4. divisible counts */
-
-/** Two shades of the primary blue, alternating per consumer, so groups are visible without a rainbow. */
-const CONSUMER_TONES = ['#60a5fa', '#1d4ed8']
 
 /** Range assignment: consumer j gets a contiguous run; the first (n % k) consumers take one extra. */
 function owner(i: number, n: number, k: number) {
@@ -402,89 +420,137 @@ function owner(i: number, n: number, k: number) {
   return k - 1
 }
 
+const loadsOf = (n: number, k: number) => Array.from({ length: k }, (_, j) => Array.from({ length: n }, (_, i) => owner(i, n, k)).filter((o) => o === j).length)
+const BOARD = { X0: 180, W: 1560, GAP: 24, Y: 310, H: 320, CHIP_W: 100, CHIP_G: 10 }
+const slotW = (k: number) => (BOARD.W - (k - 1) * BOARD.GAP) / k
+const slotX = (j: number, k: number) => BOARD.X0 + j * (slotW(k) + BOARD.GAP)
+/** Two shades of blue alternate between consumers so groups read without a rainbow. */
+const SHADE = ['#4d8dff', '#2447c9']
+
+/** Top-left of chip i when n partitions are shared by k consumers. */
+function chipPos(i: number, n: number, k: number) {
+  const o = owner(i, n, k)
+  const mine = Array.from({ length: n }, (_, q) => q).filter((q) => owner(q, n, k) === o)
+  const rowW = mine.length * BOARD.CHIP_W + (mine.length - 1) * BOARD.CHIP_G
+  return { x: slotX(o, k) + (slotW(k) - rowW) / 2 + mine.indexOf(i) * (BOARD.CHIP_W + BOARD.CHIP_G), y: BOARD.Y + 112 }
+}
+
 function divisible(t: number, c: Cue) {
   const [a0, a1, a2] = [c.at(0), c.at(1), c.at(2)]
   const d1 = c.end(1) - a1
   const cycleEnd = a1 + d1 * 0.5
-  const ks = [1, 2, 3, 4, 6]
-  const kIdx = Math.min(ks.length - 1, Math.floor(span(t, a1 + 0.2, cycleEnd) * ks.length))
-  const uneven = t >= cycleEnd
-  const n = uneven ? 10 : 12
-  const k = uneven ? 4 : t >= a1 + 0.2 ? ks[kIdx] : 1
-  const loads = Array.from({ length: k }, (_, j) => Array.from({ length: n }, (_, i) => owner(i, n, k)).filter((o) => o === j).length)
-  const cam = cameraAt(t, [
-    [0, { x: 960, y: 480, s: 1.1, rx: 16 }],
-    [a0 + 0.3, { x: 960, y: 500, s: 1.0 }, 1.6],
-    [cycleEnd - 0.2, { x: 960, y: 620, s: 1.06, ry: -4 }, 1.0],
-    [a2 - 0.1, { x: 960, y: 560, s: 0.86 }, 1.2],
-  ])
+  const stages = [
+    { at: -1, n: 12, k: 1 },
+    { at: a1 + 0.9, n: 12, k: 2 },
+    { at: a1 + 1.7, n: 12, k: 3 },
+    { at: a1 + 2.4, n: 12, k: 4 },
+    { at: a1 + 3.2, n: 12, k: 6 },
+    { at: cycleEnd, n: 10, k: 4 },
+  ]
+  const s = stages.reduce((acc, st, idx) => (t >= st.at ? idx : acc), 0)
+  const cur = stages[s]
+  const prev = s > 0 ? stages[s - 1] : cur
+  const m = s > 0 ? move(t, cur.at, 0.45) : 1
+  const heavyOn = span(t, cycleEnd + 0.9, cycleEnd + 1.4)
+  const pulse = 0.5 + 0.5 * Math.sin(t * 4)
+  const loadCur = loadsOf(cur.n, cur.k)
+  const loadPrev = loadsOf(prev.n, prev.k)
+  const perCur = Math.ceil(cur.n / cur.k)
+  const perPrev = Math.ceil(prev.n / prev.k)
+  const uneven = cur.n === 10
+  const resultOf = (st: { n: number; k: number }): ReactNode => (st.n === 10 ? <span style={{ color: INK.bad }}>lệch 3-3-2-2</span> : <span style={{ color: INK.good }}>mỗi người {st.n / st.k}</span>)
+  const colOf = (st: { n: number; k: number }, i: number) => SHADE[owner(i, st.n, st.k) % 2]
+  const heavyChip = (i: number) => (uneven && loadCur[owner(i, cur.n, cur.k)] === Math.max(...loadCur) ? heavyOn : 0)
   return (
-    <Scene
+    <SoftScene
       t={t}
-      camera={cam}
-      backdrop="studio"
-      overlay={
-        <>
-          <At x={960} y={985}>
-            <Pill text="mẹo: chọn số chia hết cho nhiều số consumer" tone="sky" size={38} o={Math.min(sp(t, a0 + 0.2), vis(t, 0, a1))} />
-          </At>
-          <At x={960} y={980} style={{ display: 'flex', gap: 30, opacity: vis(t, a2 + 0.2) }}>
-            <Pill text="tăng partition ✓" tone="green" size={40} />
-            <Pill text="giảm partition ✗" tone="red" size={40} />
-            <Pill text="topic có key → tạo đủ từ đầu" tone="amber" size={40} />
-          </At>
-        </>
-      }
+      camera={cameraAt(t, [
+        [0, { x: 960, y: 430, s: 1.08 }],
+        [a0 + 1.2, WIDE, 1.4],
+        [cycleEnd - 0.2, { x: 960, y: 480, s: 1.05 }, 1.0],
+        [a2 - 0.1, WIDE, 1.2],
+      ])}
     >
-      <At x={960} y={250}>
-        <div style={{ fontSize: 64, fontWeight: 900 }}>
-          {n} partition · {k} consumer → <span style={{ color: uneven ? NEON.red : NEON.green }}>{uneven ? 'lệch 3-3-2-2' : `mỗi người ${n / k}`}</span>
-        </div>
-      </At>
-      {Array.from({ length: n }, (_, i) => {
-        const o = owner(i, n, k)
-        const col = CONSUMER_TONES[o % CONSUMER_TONES.length]
-        const w = 1440 / n
+      <div style={{ position: 'absolute', left: 0, top: 160, width: 1920, textAlign: 'center', fontSize: 62, fontWeight: 800, letterSpacing: -1, whiteSpace: 'nowrap', opacity: vis(t, a0 + 1.0), ...TABULAR }}>
+        <Cross a={prev.n} b={cur.n} m={m} w={84} /> partition · <Cross a={prev.k} b={cur.k} m={m} w={40} /> consumer → <Cross a={resultOf(prev)} b={resultOf(cur)} m={m} w={440} align="left" />
+      </div>
+
+      {Array.from({ length: 6 }, (_, j) => {
+        const kp = prev.k
+        const kc = cur.k
+        const from = j < kp ? { x: slotX(j, kp), w: slotW(kp) } : { x: BOARD.X0 + BOARD.W, w: 0 }
+        const to = j < kc ? { x: slotX(j, kc), w: slotW(kc) } : { x: BOARD.X0 + BOARD.W, w: 0 }
+        if (j >= Math.max(kp, kc)) return null
+        const o = (j < kp ? 1 : m) * (j < kc ? 1 : 1 - m) * (j === 0 ? vis(t, a0 + 2.3) : 1)
+        const countCur = loadCur[j] ?? 0
+        const countPrev = j < kp ? loadPrev[j] : countCur
+        const heavy = uneven && countCur === Math.max(...loadCur) ? heavyOn : 0
+        const fill = lerp(countPrev / perPrev, countCur / perCur, m)
         return (
-          <div
-            key={`${n}-${i}`}
-            style={{
-              position: 'absolute',
-              left: 240 + i * w + 6,
-              top: 360,
-              width: w - 12,
-              height: 120,
-              borderRadius: 16,
-              border: `4px solid ${col}`,
-              background: `linear-gradient(180deg, ${col}55, ${col}18)`,
-              boxShadow: glow(col, 0.35),
-              display: 'grid',
-              placeItems: 'center',
-              fontSize: 34,
-              fontWeight: 900,
-              opacity: clamp(sp(t, (uneven ? cycleEnd : 0.2) + i * 0.04)),
-            }}
-          >
+          <div key={j} style={{ ...INK.card, position: 'absolute', left: lerp(from.x, to.x, m), top: BOARD.Y, width: lerp(from.w, to.w, m), height: BOARD.H, boxSizing: 'border-box', overflow: 'hidden', opacity: o, borderColor: mix('#6ea0ff', INK.bad, heavy), boxShadow: heavy > 0 ? `0 0 ${20 + 24 * pulse * heavy}px rgba(255,90,106,${0.55 * heavy}), 0 24px 50px rgba(0,4,30,0.55)` : (INK.card.boxShadow as string) }}>
+            <div style={{ position: 'absolute', left: 22, top: 20, fontSize: 40, fontWeight: 800 }}>C{j + 1}</div>
+            <div style={{ position: 'absolute', right: 22, top: 20, fontSize: 44, fontWeight: 800, color: mix('#ffffff', INK.bad, heavy), ...TABULAR }}>
+              <Cross a={countPrev} b={countCur} m={m} w={54} align="right" />
+            </div>
+            <div style={{ position: 'absolute', left: 22, right: 22, top: 262, height: 24, borderRadius: 12, background: 'rgba(255,255,255,0.14)' }}>
+              <div style={{ width: `${clamp(fill) * 100}%`, height: '100%', borderRadius: 10, background: mix(INK.accent, INK.bad, heavy), boxShadow: `0 0 12px ${mix(INK.accent, INK.bad, heavy)}` }} />
+            </div>
+          </div>
+        )
+      })}
+
+      {Array.from({ length: 12 }, (_, i) => {
+        const inPrev = i < prev.n
+        const inCur = i < cur.n
+        const p0 = inPrev ? chipPos(i, prev.n, prev.k) : chipPos(i, cur.n, cur.k)
+        const p1 = inCur ? chipPos(i, cur.n, cur.k) : p0
+        const base = inCur ? mix(colOf(prev, i), colOf(cur, i), m) : colOf(prev, i)
+        const hv = inCur ? heavyChip(i) : 0
+        // the chip colour is an rgb() string, so the gradient is built from the blended colour and white
+        const col = hv > 0 ? mix(INK.accent, INK.bad, hv) : base
+        const o = vis(t, a0 + 1.6 + i * 0.05, Infinity, 0.3) * (inCur ? 1 : 1 - m)
+        return (
+          <div key={i} style={{ position: 'absolute', left: lerp(p0.x, p1.x, m), top: lerp(p0.y, p1.y, m), width: BOARD.CHIP_W, height: 84, borderRadius: 18, display: 'grid', placeItems: 'center', fontSize: 32, fontWeight: 800, color: '#ffffff', opacity: o, background: col, boxShadow: 'inset 0 2px 0 rgba(255,255,255,0.45), 0 8px 16px rgba(0,8,50,0.45)' }}>
             P{i}
           </div>
         )
       })}
-      {loads.map((ld, j) => {
-        const col = CONSUMER_TONES[j % CONSUMER_TONES.length]
-        const heavy = uneven && ld === Math.max(...loads)
-        const w = 1440 / k
-        return (
-          <div key={`${k}-${j}`} style={{ position: 'absolute', left: 240 + j * w + w / 2 - 70, top: 540, width: 140, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, opacity: clamp(sp(t, (uneven ? cycleEnd : a1) + j * 0.06)) }}>
-            <PersonIcon size={70} color={col} t={t} />
-            <div style={{ width: 70, height: ld * 70, borderRadius: 10, background: heavy ? NEON.red : col, boxShadow: glow(heavy ? NEON.red : col, 0.5) }} />
-            <div style={{ fontSize: 34, fontWeight: 900, color: heavy ? NEON.red : '#e2e8f0' }}>{ld}</div>
+
+      <Rise t={t} at={a0 + 0.3}>
+        <div style={{ ...panel, left: 480, top: 730, width: 960, height: 140, boxSizing: 'border-box', display: 'flex', alignItems: 'center', gap: 24, opacity: 1 - span(t, a1, a1 + 0.4), whiteSpace: 'nowrap' }}>
+          <span style={{ width: 110 }} />
+          <span style={{ fontSize: 38 }}>mẹo: chọn số chia hết cho nhiều số consumer</span>
+        </div>
+      </Rise>
+      <div style={{ opacity: 1 - span(t, a1, a1 + 0.4) }}>
+        <Icon3D name="calculator" x={560} y={800} size={110} t={t} at={a0 + 0.5} />
+      </div>
+      <div style={{ opacity: vis(t, cycleEnd + 1.2, a2 - 0.1) }}>
+        <Rise t={t} at={cycleEnd + 1.2}>
+          <div style={{ ...panel, left: 410, top: 730, width: 1100, height: 140, boxSizing: 'border-box', display: 'flex', alignItems: 'center', gap: 24, whiteSpace: 'nowrap' }}>
+            <span style={{ width: 110 }} />
+            <span style={{ fontSize: 38, color: INK.bad }}>2 consumer gánh nặng hơn → nút cổ chai</span>
           </div>
-        )
-      })}
-      <At x={960} y={900}>
-        <Pill text="2 consumer gánh nặng hơn → thành nút cổ chai" tone="red" size={34} o={Math.min(sp(t, cycleEnd + 1.6), vis(t, 0, a2))} />
-      </At>
-    </Scene>
+        </Rise>
+        <Icon3D name="fire" x={490} y={800} size={110} t={t} at={cycleEnd + 1.4} />
+      </div>
+
+      {[
+        { x: 180, icon: 'thumb-up' as Icon3DName, title: 'tăng partition', sub: '✓ được phép', color: INK.good, at: a2 + 0.5 },
+        { x: 710, icon: 'thumb-down' as Icon3DName, title: 'giảm partition', sub: '✗ không được', color: INK.bad, at: a2 + 1.9 },
+        { x: 1240, icon: 'key' as Icon3DName, title: 'topic có key', sub: 'tạo đủ từ đầu', color: INK.warn, at: a2 + 3.2 },
+      ].map((v) => (
+        <div key={v.title}>
+          <Rise t={t} at={v.at}>
+            <div style={{ ...INK.card, position: 'absolute', left: v.x, top: 720, width: 500, height: 250, boxSizing: 'border-box' }}>
+              <div style={{ position: 'absolute', left: 190, top: 60, fontSize: 38, fontWeight: 800, whiteSpace: 'nowrap' }}>{v.title}</div>
+              <div style={{ position: 'absolute', left: 190, top: 126, fontSize: 32, fontWeight: 700, color: v.color, whiteSpace: 'nowrap' }}>{v.sub}</div>
+            </div>
+          </Rise>
+          <Icon3D name={v.icon} x={v.x + 100} y={845} size={130} t={t} at={v.at} />
+        </div>
+      ))}
+    </SoftScene>
   )
 }
 
@@ -492,26 +558,44 @@ function divisible(t: number, c: Cue) {
 
 function summary(t: number, c: Cue) {
   return (
-    <SummaryGrid
-      t={t}
-      cue={c}
-      cards={[
-        { title: 'Trần song song', body: 'consumer làm việc ≤ số partition', tone: 'blue' },
-        { title: 'Throughput ÷ 1 consumer', body: 'lấy max với phía ghi, cộng phần dư', tone: 'green' },
-        { title: 'Nhiều quá cũng hại', body: 'file, RAM producer, lô nhỏ, hồi phục chậm', tone: 'red' },
-        { title: 'Chọn số chia đều', body: '12, 24, 60… · tạo đủ từ đầu', tone: 'amber' },
-      ]}
-    />
+    <SoftTheme>
+      <SummaryList t={t} cue={c} items={['Số partition là trần song song', 'Throughput ÷ tốc độ 1 consumer, cộng dư', 'Nhiều quá hại: tốn tài nguyên, hồi phục chậm', 'Chọn số chia đều, tạo đủ từ đầu']} />
+    </SoftTheme>
   )
 }
 
 const RENDERS: Record<string, LessonScene['render']> = { hook, parallel, formula, cost, divisible, summary }
 
+/** Key-moment sounds, timed to the same cue offsets the scenes animate on. */
+const SFX: Record<string, SceneSfx[]> = {
+  // the alert bell lands when the lag counter passes 2.000.000 (1.75M + 160k/s)
+  hook: [
+    { kind: 'error', at: () => 1.55 },
+    { kind: 'tick', at: (c) => c.at(1) + 1.0 },
+  ],
+  parallel: [
+    { kind: 'tick', at: (c) => c.at(1) + 2.2 },
+    { kind: 'ding', at: (c) => c.at(2) + 0.7 },
+  ],
+  formula: [
+    { kind: 'ding', at: (c) => c.at(1) + 5.3 },
+    { kind: 'ding', at: (c) => c.at(2) + 4.0 },
+  ],
+  cost: [
+    { kind: 'error', at: (c) => c.at(2) + 1.2 },
+    { kind: 'tick', at: (c) => c.at(2) + 3.0 },
+  ],
+  divisible: [
+    { kind: 'tick', at: (c) => c.at(1) + (c.end(1) - c.at(1)) * 0.5 },
+    { kind: 'error', at: (c) => c.at(1) + (c.end(1) - c.at(1)) * 0.5 + 0.9 },
+  ],
+}
+
 const q = (prompt: string, options: string[], answer: number, explain: string) => ({ kind: 'choice' as const, prompt, options, answer, explain })
 
 export const partitionCountLesson: Lesson = {
   ...partitionCountScript,
-  scenes: partitionCountScript.scenes.map((s) => ({ ...s, render: RENDERS[s.id] })),
+  scenes: partitionCountScript.scenes.map((s) => ({ ...s, render: RENDERS[s.id], sfx: SFX[s.id] })),
   intro: [
     { kind: 'video', scenes: ['hook'] },
     {

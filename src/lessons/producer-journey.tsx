@@ -1,63 +1,69 @@
-import type { CSSProperties, ReactNode } from 'react'
-import {
-  At,
-  Burst,
-  CodeWindow,
-  GearIcon,
-  Kinetic,
-  LetterIcon,
-  MailBagIcon,
-  MsgChip,
-  NEON,
-  NeonCard,
-  Panel,
-  Pill,
-  Scene,
-  Stamp,
-  SummaryGrid,
-  TitleCard,
-  TruckIcon,
-  cameraAt,
-  clamp,
-  glow,
-  lerp,
-  move,
-  sp,
-  span,
-  vis,
-} from '../player/motion-kit'
-import type { Cue, Lesson, Scene as LessonScene } from '../player/types'
+import type { ReactNode } from 'react'
+import { cameraAt, clamp, lerp, move, sp, span, vis } from '../player/motion-kit'
+import { Envelope, HERO, Icon3D, Packets, ProducerBox, Rise, SOFT, SOFT_PANEL, ServerUnit, Sheen, SoftScene, SoftTheme, SummaryList, Wire } from '../player/schematic'
+import type { Cue, Lesson, Scene as LessonScene, SceneSfx } from '../player/types'
 import { MONO } from '../remotion/video-fonts'
 import { producerJourneyScript } from './producer-journey-script'
 
-/* Palette for this lesson: slate for neutral, blue for Kafka, amber for the post-office analogy, red/green for outcomes. */
-const SLATE = '#94a3b8'
-const label: CSSProperties = { fontSize: 22, fontWeight: 800, letterSpacing: 3, color: SLATE }
+/** This lesson is drawn in the navy glow style. */
+const INK = SOFT
+const panel = SOFT_PANEL
+const WIDE = { x: 960, y: 540, s: 1 }
+const fmt = (n: number) => Math.round(n).toLocaleString('vi-VN')
+/** Snap time so counters change at most 6 times per second (motion blur smears faster digits). */
+const tq = (t: number) => Math.floor(t * 6) / 6
+const GLOW = '0 0 34px rgba(77,141,255,0.6), inset 0 2px 0 rgba(255,255,255,0.5)'
 
-/** Column x positions shared by the pipeline and the post-office scenes, so the analogy lines up with the diagram. */
-const COL = { send: 230, ser: 450, part: 790, acc: 1160, sender: 1520, broker: 1800 }
-
-/** Neon station card in the same language as the Segment lesson's file cards (content inside, never overlaid). */
-function Station({ x, y, title, sub, active, w = 280, children }: { x: number; y: number; title: string; sub?: string; active?: boolean; w?: number; children?: ReactNode }) {
-  const c = active ? NEON.cyan : NEON.blue
+/** Glowing pill centred on (x, y). `hot` cross-fades a coloured state (`color`) over the navy base. */
+function Tag({ x, y, text, o = 1, hot = 0, color = INK.good, size = 30, mono = false }: { x: number; y: number; text: string; o?: number; hot?: number; color?: string; size?: number; mono?: boolean }) {
+  if (o <= 0) return null
   return (
-    <At x={x} y={y} style={{ transform: `translate(-50%, -50%) scale(${active ? 1.06 : 1})` }}>
-      <div
-        style={{
-          width: w,
-          padding: '22px 22px 24px',
-          borderRadius: 24,
-          background: 'linear-gradient(160deg, #2d313d 0%, #1b1e27 60%, #15171e 100%)',
-          border: `4px solid ${c}`,
-          boxShadow: `${glow(c, active ? 1 : 0.45)}, 0 30px 50px rgba(0,0,0,0.55)`,
-          textAlign: 'center',
-        }}
-      >
-        <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: 3, color: active ? '#a5f3fc' : '#93c5fd' }}>{sub}</div>
-        <div style={{ fontSize: 44, fontWeight: 900, marginTop: 6, color: '#fff' }}>{title}</div>
-        {children}
+    <div style={{ ...panel, left: x, top: y, transform: 'translate(-50%, -50%)', borderRadius: 999, padding: '10px 28px', fontSize: size, fontFamily: mono ? MONO : undefined, whiteSpace: 'nowrap', opacity: clamp(o), fontVariantNumeric: 'tabular-nums' }}>
+      <div style={{ position: 'absolute', inset: 0, borderRadius: 999, background: `${color}30`, border: `2px solid ${color}`, boxShadow: `0 0 22px ${color}99`, opacity: clamp(hot) }} />
+      <span style={{ position: 'relative' }}>{text}</span>
+    </div>
+  )
+}
+
+/** Navy card centred on (x, y). `lit` cross-fades the glossy hero look, `bad` a red alert state. Children are positioned inside the card box. */
+function Card({ x, y, w, h, lit = 0, bad = 0, o = 1, children }: { x: number; y: number; w: number; h: number; lit?: number; bad?: number; o?: number; children?: ReactNode }) {
+  if (o <= 0) return null
+  return (
+    <div style={{ position: 'absolute', left: x - w / 2, top: y - h / 2, width: w, height: h, opacity: clamp(o) }}>
+      <div style={{ ...INK.card, position: 'absolute', inset: 0 }} />
+      <div style={{ position: 'absolute', inset: 0, borderRadius: 22, background: HERO, boxShadow: GLOW, opacity: clamp(lit), overflow: 'hidden' }}>
       </div>
-    </At>
+      <div style={{ position: 'absolute', inset: 0, borderRadius: 22, background: 'linear-gradient(160deg, rgba(255,90,106,0.38), rgba(110,16,40,0.7))', border: `2px solid ${INK.bad}`, boxShadow: `0 0 28px ${INK.bad}88`, opacity: clamp(bad) }} />
+      <div style={{ position: 'absolute', inset: 0 }}>{children}</div>
+    </div>
+  )
+}
+
+/** Centred big statement, revealed word by word. */
+function Say({ y, text, color = INK.text, size = 52, o = 1 }: { y: number; text: string; color?: string; size?: number; o?: number }) {
+  const q = clamp(o)
+  if (q <= 0) return null
+  return (
+    <div style={{ position: 'absolute', left: 0, width: 1920, top: y, textAlign: 'center', fontSize: size, fontWeight: 800, letterSpacing: -0.5, color, whiteSpace: 'nowrap' }}>
+      {text.split(' ').map((w, k, all) => {
+        const p = clamp(q * (1 + all.length * 0.12) - k * 0.12)
+        return (
+          <span key={k} style={{ display: 'inline-block', marginRight: size * 0.26, opacity: p, filter: p < 0.98 ? `blur(${(1 - p) * 8}px)` : undefined, transform: `translateY(${(1 - p) * 24}px)` }}>
+            {w}
+          </span>
+        )
+      })}
+    </div>
+  )
+}
+
+/** Progress bar in the soft style (track + glossy fill). */
+function Bar({ x, y, w, h, fill, hl = 0 }: { x: number; y: number; w: number; h: number; fill: number; hl?: number }) {
+  return (
+    <div style={{ position: 'absolute', left: x, top: y, width: w, height: h, borderRadius: h / 2, background: INK.cell.empty, border: '1.5px solid rgba(110,160,255,0.45)', boxSizing: 'border-box', overflow: 'hidden' }}>
+      <div style={{ width: `${clamp(fill) * 100}%`, height: '100%', borderRadius: h / 2, background: INK.cell.filled, boxShadow: 'inset 0 2px 0 rgba(255,255,255,0.5)' }} />
+      <div style={{ position: 'absolute', inset: 0, borderRadius: h / 2, border: '2.5px solid #ffffff', boxShadow: '0 0 14px rgba(255,255,255,0.8)', opacity: clamp(hl) }} />
+    </div>
   )
 }
 
@@ -65,234 +71,203 @@ function Station({ x, y, title, sub, active, w = 280, children }: { x: number; y
 
 function hook(t: number, c: Cue) {
   const [a0, a1, a2] = [c.at(0), c.at(1), c.at(2)]
-  const sent = Math.min(100, Math.floor(span(t, a0 + 0.6, a0 + 2.6) * 100))
-  const exited = t >= a1 + 0.4
-  const cam = cameraAt(t, [
-    [0, { x: 640, y: 520, s: 1.25, rx: 10 }],
-    [a0 + 0.4, { x: 640, y: 540, s: 1.15 }, 1.6],
-    [a1 + 0.6, { x: 1380, y: 540, s: 1.15, ry: -5 }, 1.2],
-    [a2 - 0.1, { x: 960, y: 560, s: 0.9 }, 1.3],
-  ])
+  const sent = Math.min(100, Math.floor(span(tq(t), a0 + 1.4, a0 + 3.4) * 100))
+  const dead = span(t, a1 + 0.3, a1 + 0.8)
+  const brokerAt = a1 + 1.7
   return (
-    <Scene
-      t={t}
-      camera={cam}
-      backdrop="terminal"
-      overlay={
-        <At x={960} y={960} style={{ opacity: vis(t, a2 + 0.3), padding: '16px 44px', borderRadius: 26, background: 'rgba(5,7,15,0.9)' }}>
-          <Kinetic t={t} at={a2 + 0.4} text="send() trả về ≠ tin đã tới broker" size={72} color="#e2e8f0" stagger={0.018} />
-        </At>
-      }
-    >
-      <At x={640} y={470} style={{ opacity: exited ? 0.35 : 1 }}>
-        <CodeWindow
-          t={t}
-          at={0.1}
-          w={880}
-          size={30}
-          cps={60}
-          lines={[
-            [['for', '#93c5fd'], [' (i in 1..100)', '#e2e8f0']],
-            [['  producer', '#e2e8f0'], ['.', SLATE], ['send', '#60a5fa'], ['(record)', '#e2e8f0']],
-            [['System', '#e2e8f0'], ['.', SLATE], ['exit', '#f87171'], ['(0)', '#e2e8f0']],
-          ]}
-        />
-      </At>
-      <At x={640} y={700} style={{ display: 'flex', gap: 20, opacity: vis(t, a0 + 0.6) }}>
-        <Pill text={`đã gọi send(): ${sent}/100`} tone="sky" size={30} />
-        <Pill text="mỗi lần ~0,1 ms" tone="sky" size={30} />
-      </At>
-      <At x={640} y={260}>
-        <Pill text="ứng dụng đã tắt" tone="red" size={34} o={sp(t, a1 + 0.4)} />
-      </At>
-      <At x={1380} y={500}>
-        <Panel t={t} at={a1 + 0.2} w={520} h={360} tone={exited ? 'red' : 'blue'} still>
-          <div style={{ padding: '30px 36px' }}>
-            <div style={label}>BROKER · payments-0</div>
-            <div style={{ fontSize: 120, fontWeight: 900, fontFamily: MONO, marginTop: 20, color: '#f8fafc' }}>0</div>
-            <div style={{ fontSize: 30, fontWeight: 700, color: SLATE }}>tin nhận được</div>
-          </div>
-        </Panel>
-      </At>
-      <At x={1460} y={690}>
-        <Stamp t={t} at={a1 + 1.8} text="MẤT 100 TIN" size={60} />
-      </At>
-    </Scene>
+    <SoftScene t={t} camera={cameraAt(t, [[0, WIDE]])}>
+      <Rise t={t} at={0.2}>
+        <div style={{ opacity: 1 - 0.55 * dead }}>
+          <ProducerBox x={110} y={380} title="ứng dụng" line={`send() × ${sent}`} w={420} />
+        </div>
+      </Rise>
+      <Tag x={320} y={300} text="ứng dụng đã tắt" color={INK.bad} hot={1} o={vis(t, a1 + 0.3, Infinity, 0.35)} />
+      <Icon3D name="toggle" x={320} y={600} size={120} t={t} at={a1 + 0.5} />
+      <Wire from={{ x: 540, y: 430 }} to={{ x: 738, y: 430 }} color={INK.line} p={move(t, 0.8, 0.5)} flow={t} />
+      <Packets t={t} from={{ x: 540, y: 430 }} to={{ x: 738, y: 430 }} start={a0 + 1.4} end={a0 + 3.4} every={0.12} len={0.5} size={18} />
+      <Rise t={t} at={0.8}>
+        <Card x={960} y={430} w={440} h={230}>
+          <div style={{ position: 'absolute', left: 0, right: 0, top: 26, textAlign: 'center', fontSize: 28, fontWeight: 700, color: INK.faint }}>đã gọi send()</div>
+          <div style={{ position: 'absolute', left: 0, right: 0, top: 78, textAlign: 'center', fontSize: 92, fontWeight: 800, fontVariantNumeric: 'tabular-nums', letterSpacing: -2 }}>{sent}/100</div>
+        </Card>
+      </Rise>
+      <Tag x={960} y={600} text="mỗi lần ~0,1 ms" o={vis(t, a0 + 1.4)} />
+      <Wire from={{ x: 1180, y: 430 }} to={{ x: 1440, y: 430 }} color={INK.bad} dashed p={move(t, a1 + 1.4, 0.5)} />
+      <Rise t={t} at={brokerAt}>
+        <ServerUnit x={1450} y={365} name="broker" t={t} />
+      </Rise>
+      <Rise t={t} at={a1 + 2.3}>
+        <Card x={1580} y={650} w={320} h={150} bad={1}>
+          <div style={{ position: 'absolute', left: 0, right: 0, top: 10, textAlign: 'center', fontSize: 72, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>0</div>
+          <div style={{ position: 'absolute', left: 0, right: 0, top: 98, textAlign: 'center', fontSize: 28, fontWeight: 700 }}>tin nhận được</div>
+        </Card>
+      </Rise>
+      <Icon3D name="thumb-down" x={1580} y={250} size={120} t={t} at={a1 + 3.0} />
+      <Icon3D name="zoom" x={960} y={280} size={130} t={t} at={a2 + 2.6} />
+      <Say y={800} text="send() trả về ≠ tin đã tới broker" color={INK.warn} size={58} o={sp(t, a2 + 0.8)} />
+    </SoftScene>
   )
 }
 
 /* ------------------------------------------------------------------ 1. the four stations */
 
-/** Accumulator content: three partition rows with batches; `fill` per row in [0, 1]. */
-function Accumulator({ fill, highlight }: { fill: number[]; highlight?: number }) {
+const PX = [175, 485, 795, 1105, 1415]
+const ST_TOP = 370
+const ST_Y = 565
+
+function Station({ x, t, at, lit, sub, title, children }: { x: number; t: number; at: number; lit: number; sub: string; title: string; children?: ReactNode }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 14 }}>
-      {fill.map((f, i) => (
-        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ width: 40, fontSize: 22, fontWeight: 900, color: SLATE }}>P{i}</span>
-          <div style={{ flex: 1, height: 34, borderRadius: 8, border: `2px solid ${highlight === i ? NEON.blue : '#334155'}`, background: '#0f1525', overflow: 'hidden' }}>
-            <div style={{ width: `${f * 100}%`, height: '100%', background: highlight === i ? NEON.blue : '#3b5b9a' }} />
-          </div>
+    <Rise t={t} at={at}>
+      <div style={{ position: 'absolute', left: x - 120, top: ST_TOP, width: 240, height: 390 }}>
+        <div style={{ ...INK.card, position: 'absolute', inset: 0 }} />
+        <div style={{ position: 'absolute', inset: 0, borderRadius: 22, background: HERO, boxShadow: GLOW, opacity: clamp(lit), overflow: 'hidden' }}>
+          <Sheen t={t} every={2.4} />
         </div>
-      ))}
-    </div>
+        <div style={{ position: 'absolute', left: 0, right: 0, top: 20, textAlign: 'center', fontSize: 24, fontWeight: 700, color: INK.faint }}>{sub}</div>
+        <div style={{ position: 'absolute', left: 0, right: 0, top: 54, textAlign: 'center', fontSize: 34, fontWeight: 800, letterSpacing: -0.5 }}>{title}</div>
+        {children}
+      </div>
+    </Rise>
   )
 }
 
 function pipeline(t: number, c: Cue) {
   const [a0, a1, a2, a3] = [c.at(0), c.at(1), c.at(2), c.at(3)]
   const d1 = c.end(1) - a1
-  // The message: object → (serializer) bytes → (partitioner) P1 → drops into the P1 batch.
-  const atSer = a1 + 0.2
   const atPart = a1 + d1 * 0.55
-  const atAcc = a2 + 0.3
-  const mx = t < atSer ? lerp(COL.send, COL.ser, move(t, a0 + 1.6, 1.0)) : t < atPart ? COL.ser : t < atAcc ? lerp(COL.ser, COL.part, move(t, atPart - 0.6, 0.6)) : lerp(COL.part, COL.acc, move(t, atAcc, 0.7))
-  const my = t < atAcc ? 330 : lerp(330, 560, move(t, atAcc, 0.7))
-  const msgText = t < atSer + 0.4 ? '{ id: 42 }' : t < atPart + 0.4 ? '0101 1100…' : '0101… → P1'
-  const dropped = t >= atAcc + 0.8
-  const truck = move(t, a3 + 0.6, 1.4)
+  const fade = (a: number, b: number) => span(t, a, a + 0.4) - span(t, b, b + 0.4)
+  // The message chip: object -> bytes -> "to P1" while it rides along the lane above the stations, then drops into P1.
+  const cx = PX[0] + (PX[1] - PX[0]) * move(t, a1 + 0.2, 0.7) + (PX[2] - PX[1]) * move(t, atPart - 0.1, 0.7) + (PX[3] - PX[2]) * move(t, a2 + 0.1, 0.7)
+  const cy = 300 + (609 - 300) * move(t, a2 + 1.0, 0.6)
+  const chipO = vis(t, a0 + 2.8, Infinity, 0.35) * (1 - span(t, a2 + 1.45, a2 + 1.75))
+  const txtB = fade(a1 + 0.9, atPart + 0.6 - 0.4)
+  const txtP = span(t, atPart + 0.6, atPart + 1.0)
+  const txtO = 1 - span(t, a1 + 0.9, a1 + 1.3)
+  const drain = move(t, a3 + 0.5, 0.8)
+  const creep = Math.min(0.18, Math.max(0, (t - a2) * 0.012))
+  const fills = [0.5 + creep, 0.6 + creep * 0.4 + 0.2 * move(t, a2 + 1.5, 0.5), 0.28 + creep].map((f) => f * (1 - drain))
+  const hl = vis(t, a2 + 0.8, a3 + 0.3, 0.35)
   const cam = cameraAt(t, [
-    [0, { x: 960, y: 540, s: 0.86, rx: 12 }],
-    [a0 + 1.2, { x: 420, y: 470, s: 1.2 }, 1.2],
-    [a1 - 0.1, { x: 660, y: 470, s: 1.2, ry: 4 }, 1.1],
-    [a2 - 0.1, { x: 1120, y: 560, s: 1.18 }, 1.1],
-    [a3 + 0.3, { x: 1500, y: 560, s: 1.05, ry: -4 }, 1.3],
-    [c.end(3) - 0.6, { x: 990, y: 560, s: 0.86 }, 1.2],
+    [0, WIDE],
+    [a1 - 0.2, { x: 650, y: 540, s: 1.1 }, 1.3],
+    [a2 - 0.2, { x: 1100, y: 540, s: 1.1 }, 1.3],
+    [a3 - 0.2, { x: 1440, y: 540, s: 1.06 }, 1.3],
+    [a3 + 2.6, WIDE, 1.3],
   ])
+  const link = (i: number, at: number) => <Wire key={i} from={{ x: PX[i] + 124, y: ST_Y }} to={{ x: PX[i + 1] - 124, y: ST_Y }} color={INK.line} p={move(t, at, 0.5)} />
   return (
-    <Scene t={t} camera={cam} overlay={<div style={{ opacity: vis(t, -1, a1 - 0.2) }}><TitleCard t={t} at={0.1} kicker="BỐN TRẠM" title="Bên trong send()" dock={1.2} /></div>}>
-      {/* The app process: everything left of the broker runs inside the app's own RAM (dashed = volatile). */}
-      <div style={{ position: 'absolute', left: 60, top: 180, width: 1630, height: 760, borderRadius: 30, border: '3px dashed #475569', opacity: vis(t, 0.2) }}>
-        <div style={{ ...label, position: 'absolute', left: 30, bottom: 20 }}>ỨNG DỤNG CỦA BẠN · RAM (nét đứt = dễ mất)</div>
+    <SoftScene t={t} camera={cam} title={{ kicker: 'BỐN TRẠM', text: 'Bên trong send()' }}>
+      <div style={{ position: 'absolute', left: 25, top: 345, width: 1540, height: 505, borderRadius: 34, border: '2.5px dashed rgba(110,160,255,0.55)', opacity: vis(t, a0 + 0.2) }}>
+        <div style={{ position: 'absolute', left: 0, right: 0, bottom: 14, textAlign: 'center', fontSize: 26, fontWeight: 700, color: INK.faint }}>ỨNG DỤNG CỦA BẠN · RAM (nét đứt = dễ mất)</div>
       </div>
-      <Station x={COL.send} y={330} title="send()" sub="APP" active={t < atSer} />
-      <Station x={COL.ser} y={560} w={300} title="Serializer" sub="① OBJECT → BYTE" active={t >= atSer && t < atPart} />
-      <Station x={COL.part} y={560} w={300} title="Partitioner" sub="② CHỌN PARTITION" active={t >= atPart && t < atAcc} />
-      <Station x={COL.acc} y={640} w={330} title="Bộ gom thùng" sub="③ RECORD ACCUMULATOR" active={t >= atAcc && t < a3}>
-        <Accumulator fill={[0.55, dropped ? 0.78 : 0.62, 0.3].map((f) => f * (1 - move(t, a3 + 0.6, 0.6)))} highlight={t >= atAcc ? 1 : undefined} />
-      </Station>
-      <Station x={COL.sender} y={560} w={250} title="Sender" sub="④ LUỒNG NỀN" active={t >= a3 && t < c.end(3)}>
-        <div style={{ display: 'flex', justifyContent: 'center', marginTop: 8 }}>
-          <GearIcon size={46} t={t >= a3 ? t * 2 : 0} color={t >= a3 ? NEON.blue : '#475569'} />
-        </div>
-      </Station>
-      <At x={COL.broker} y={560}>
-        <div style={{ width: 170, height: 300, borderRadius: 22, background: 'linear-gradient(160deg,#1e293b,#0f172a)', border: '3px solid #475569', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
-          <div style={{ ...label }}>BROKER</div>
-          {[0, 1, 2].map((k) => (
-            <div key={k} style={{ width: 120, height: 22, borderRadius: 5, background: t >= a3 + 2.0 ? NEON.blue : '#334155', opacity: t >= a3 + 2.0 ? 1 : 0.6 }} />
-          ))}
-        </div>
-      </At>
-      {/* The travelling message. */}
-      {t >= a0 + 1.4 && !dropped && (
-        <At x={mx} y={my - 120}>
-          <div style={{ padding: '10px 18px', borderRadius: 12, background: '#0b1630', border: `2px solid ${NEON.blue}`, fontFamily: MONO, fontSize: 24, fontWeight: 700, whiteSpace: 'nowrap', boxShadow: glow(NEON.blue, 0.5) }}>{msgText}</div>
-        </At>
-      )}
-      <At x={COL.acc} y={360}>
-        <Pill text="send() trả về ở đây ✓" tone="green" size={30} o={Math.min(sp(t, atAcc + 0.9), vis(t, 0, a3 + 0.2))} />
-      </At>
-      {/* Sender carries the batches to the broker; the callback comes back. */}
-      {t >= a3 + 0.4 && truck < 1 && (
-        <At x={lerp(COL.sender, COL.broker - 60, truck)} y={400 - Math.sin(Math.PI * truck) * 60}>
-          <div style={{ display: 'flex', gap: 6 }}>
-            {[0, 1, 2].map((k) => (
-              <div key={k} style={{ width: 36, height: 26, borderRadius: 5, background: NEON.blue }} />
-            ))}
+      <Station x={PX[0]} t={t} at={a0 + 0.5} lit={vis(t, a0 + 0.6, a1 + 0.1, 0.35)} sub="APP" title="send()" />
+      <Station x={PX[1]} t={t} at={a0 + 1.1} lit={vis(t, a1 + 0.2, atPart, 0.35)} sub="① object → byte" title="Serializer" />
+      <Station x={PX[2]} t={t} at={a0 + 1.7} lit={vis(t, atPart, a2 + 0.1, 0.35)} sub="② chọn partition" title="Partitioner" />
+      <Station x={PX[3]} t={t} at={a0 + 2.3} lit={vis(t, a2 + 0.6, a3, 0.35)} sub="③ trong RAM" title="Bộ gom thùng">
+        {[0, 1, 2].map((i) => (
+          <div key={i}>
+            <div style={{ position: 'absolute', left: 20, top: 146 + i * 70, width: 40, textAlign: 'center', fontSize: 28, fontWeight: 800 }}>P{i}</div>
+            <Bar x={68} y={146 + i * 70} w={152} h={40} fill={fills[i]} hl={i === 1 ? hl : 0} />
           </div>
-        </At>
-      )}
-      <svg width={1920} height={1080} style={{ position: 'absolute', left: 0, top: 0, overflow: 'visible' }}>
-        <path d={`M${COL.broker} 400 C ${COL.broker} 200, ${COL.send} 120, ${COL.send} 250`} fill="none" stroke={NEON.green} strokeWidth={4} strokeDasharray="12 10" pathLength={1} strokeDashoffset={0} opacity={vis(t, a3 + 2.2)} />
-      </svg>
-      <At x={980} y={140}>
-        <Pill text="callback: thành công ✓" tone="green" size={30} o={sp(t, a3 + 2.6)} />
-      </At>
-    </Scene>
+        ))}
+      </Station>
+      <Station x={PX[4]} t={t} at={a0 + 2.9} lit={vis(t, a3, a3 + 3.0, 0.35)} sub="④ luồng nền" title="Sender" />
+      {[PX[0], PX[1], PX[2], PX[4]].map((x, k) => (
+        <Icon3D key={x} name={(['computer', 'cube', 'hash', 'rocket'] as const)[k]} x={x} y={ST_TOP + 255} size={140} t={t} at={[a0 + 0.9, a0 + 1.5, a0 + 2.1, a0 + 3.3][k]} />
+      ))}
+      {link(0, a0 + 1.4)}
+      {link(1, a0 + 2.0)}
+      {link(2, a0 + 2.6)}
+      {link(3, a0 + 3.2)}
+      <Chip x={cx} y={cy} o={chipO} items={[{ text: '{ id: 42 }', o: txtO }, { text: '0101 1100', o: txtB }, { text: '→ P1', o: txtP }]} />
+      <Tag x={PX[3]} y={232} text="send() trả về ngay tại đây" hot={1} o={vis(t, a2 + 3.0, a3 - 0.2, 0.35)} />
+      <Packets t={t} from={{ x: PX[3] + 124, y: ST_Y }} to={{ x: PX[4] - 124, y: ST_Y }} start={a3 + 0.4} end={a3 + 1.6} every={0.25} len={0.5} size={18} />
+      <Rise t={t} at={a3 + 0.9}>
+        <ServerUnit x={1620} y={500} name="broker" t={t} />
+      </Rise>
+      <Wire from={{ x: PX[4] + 124, y: ST_Y }} to={{ x: 1612, y: ST_Y }} color={INK.line} p={move(t, a3 + 1.0, 0.5)} />
+      <Packets t={t} from={{ x: PX[4] + 124, y: ST_Y }} to={{ x: 1612, y: ST_Y }} start={a3 + 1.5} end={a3 + 2.5} every={0.25} len={0.5} size={20} />
+      <Envelope t={t} at={a3 + 2.7} from={{ x: 1740, y: 430 }} to={{ x: 250, y: 330 }} label="callback: thành công" color={INK.good} len={1.6} arc={130} />
+      <Icon3D name="tick" x={175} y={310} size={100} t={t} at={a3 + 4.3} />
+    </SoftScene>
+  )
+}
+
+/** Pill chip carrying cross-fading texts (all stacked in one grid cell). */
+function Chip({ x, y, o, items }: { x: number; y: number; o: number; items: { text: string; o: number }[] }) {
+  if (o <= 0) return null
+  return (
+    <div style={{ ...panel, left: x, top: y, transform: 'translate(-50%, -50%)', borderRadius: 999, padding: '10px 26px', fontFamily: MONO, fontSize: 28, opacity: clamp(o), display: 'grid', justifyItems: 'center', borderColor: '#6ea2ff', boxShadow: '0 0 22px rgba(77,141,255,0.8)' }}>
+      {items.map((i) => (
+        <span key={i.text} style={{ gridArea: '1 / 1', opacity: clamp(i.o), whiteSpace: 'nowrap' }}>
+          {i.text}
+        </span>
+      ))}
+    </div>
   )
 }
 
 /* ------------------------------------------------------------------ 2. post-office analogy */
 
-/** Analogy card: amber neon (everyday side), an icon prop, a title and one line. */
-function AnalogyCard({ x, t, at, title, line, active, children }: { x: number; t: number; at: number; title: string; line: string; active: boolean; children: ReactNode }) {
-  const p = clamp(sp(t, at, 13, 110), 0, 1.1)
+const CX = [330, 960, 1590]
+const CARD_Y = 520
+const CARD_TOP = CARD_Y - 220
+
+/** Analogy card: icon area on top, title and one line below; `lit` cross-fades the glossy highlight. */
+function Analogy({ x, t, at, lit, title, line, children }: { x: number; t: number; at: number; lit: number; title: string; line: string; children: ReactNode }) {
   return (
-    <At x={x} y={540} style={{ opacity: clamp(p * 1.4), transform: `translate(-50%, -50%) translateY(${(1 - clamp(p)) * 80}px) scale(${active ? 1.05 : 1})` }}>
-      <div
-        style={{
-          width: 470,
-          height: 460,
-          borderRadius: 28,
-          background: 'linear-gradient(160deg, #2d313d 0%, #1b1e27 60%, #15171e 100%)',
-          border: `4px solid ${NEON.amber}`,
-          boxShadow: `${glow(NEON.amber, active ? 0.9 : 0.35)}, 0 30px 50px rgba(0,0,0,0.55)`,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          padding: '36px 30px',
-        }}
-      >
-        <div style={{ height: 210, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 18 }}>{children}</div>
-        <div style={{ fontSize: 48, fontWeight: 900, marginTop: 18, color: '#fff' }}>{title}</div>
-        <div style={{ fontSize: 28, fontWeight: 600, color: '#cbd5e1', marginTop: 10, textAlign: 'center' }}>{line}</div>
-      </div>
-    </At>
+    <Rise t={t} at={at}>
+      <Card x={x} y={CARD_Y} w={470} h={440} lit={lit * 0.85}>
+        <div style={{ position: 'absolute', left: 0, right: 0, top: 250, textAlign: 'center', fontSize: 46, fontWeight: 800, letterSpacing: -0.5 }}>{title}</div>
+        <div style={{ position: 'absolute', left: 36, right: 36, top: 318, textAlign: 'center', fontSize: 28, fontWeight: 600, lineHeight: 1.3, color: 'rgba(255,255,255,0.88)' }}>{line}</div>
+      </Card>
+      {children}
+    </Rise>
   )
 }
 
 function post(t: number, c: Cue) {
   const [a0, a1, a2] = [c.at(0), c.at(1), c.at(2)]
-  const X = [330, 960, 1590]
-  const fillAt = span(t, a1 + 0.3, c.end(1))
+  const fillAt = span(t, a1 + 0.5, c.end(1))
   const drive = move(t, a2 + 0.8, 1.6)
+  const bagX = [-130, 0, 130]
   const cam = cameraAt(t, [
-    [0, { x: X[0], y: 560, s: 1.15, ry: 6 }],
-    [a1 - 0.2, { x: X[1], y: 560, s: 1.12 }, 1.2],
-    [a2 - 0.1, { x: X[2], y: 560, s: 1.12, ry: -5 }, 1.2],
-    [a2 + 2.8, { x: 960, y: 560, s: 0.86 }, 1.3],
+    [0, { x: 520, y: 540, s: 1.05 }],
+    [a1 - 0.2, { x: 960, y: 540, s: 1.06 }, 1.3],
+    [a2 - 0.2, { x: 1400, y: 540, s: 1.05 }, 1.3],
+    [a2 + 2.7, WIDE, 1.4],
   ])
-  const arrow = (x1: number, x2: number, at: number) => (
-    <svg width={1920} height={1080} style={{ position: 'absolute', left: 0, top: 0, overflow: 'visible' }}>
-      <path d={`M${x1} 540 H${x2}`} stroke={NEON.amber} strokeWidth={6} strokeLinecap="round" pathLength={1} strokeDasharray="1 1" strokeDashoffset={1 - move(t, at, 0.5)} style={{ filter: `drop-shadow(0 0 8px ${NEON.amber})` }} />
-      <path d={`M${x2 - 18} 524 L${x2} 540 L${x2 - 18} 556`} fill="none" stroke={NEON.amber} strokeWidth={6} strokeLinecap="round" opacity={vis(t, at + 0.4)} />
-    </svg>
-  )
-  const mapTo = (x: number, text: string, at: number) => (
-    <At x={x} y={860}>
-      <Pill text={`= ${text}`} tone="sky" size={34} o={sp(t, at)} style={{ fontFamily: MONO }} />
-    </At>
-  )
+  const mapTo = (x: number, text: string, at: number) => <Tag x={x} y={850} text={`= ${text}`} mono o={vis(t, at)} />
   return (
-    <Scene t={t} camera={cam} overlay={<TitleCard t={t} at={0.1} kicker="VÍ DỤ ĐỜI THƯỜNG" title="Giống bưu cục" tone="amber" dock={1.2} />}>
-      <AnalogyCard x={X[0]} t={t} at={a0 + 0.3} title="Quầy gửi" line="đưa thư, nhận biên nhận, về ngay" active={t < a1}>
-        <div style={{ transform: `translateX(${lerp(-40, 40, move(t, a0 + 1.0, 0.8))}px) rotate(${lerp(-8, 4, move(t, a0 + 1.0, 0.8))}deg)` }}>
-          <LetterIcon size={190} />
-        </div>
-      </AnalogyCard>
-      {arrow(X[0] + 250, X[1] - 250, a1 - 0.2)}
-      <AnalogyCard x={X[1]} t={t} at={a1 - 0.2} title="Ngăn theo tỉnh" line="mỗi tỉnh một bao tải" active={t >= a1 && t < a2}>
+    <SoftScene t={t} camera={cam} title={{ kicker: 'VÍ DỤ ĐỜI THƯỜNG', text: 'Giống bưu cục' }}>
+      <Analogy x={CX[0]} t={t} at={a0 + 1.2} lit={vis(t, a0 + 1.2, a1, 0.35)} title="Quầy gửi" line="đưa thư, nhận biên nhận, về ngay">
+        <Icon3D name="mail" x={CX[0] + lerp(-50, 50, move(t, a0 + 2.0, 0.9))} y={CARD_TOP + 115} size={190} t={t} at={a0 + 1.5} />
+      </Analogy>
+      <Wire from={{ x: CX[0] + 245, y: CARD_Y }} to={{ x: CX[1] - 245, y: CARD_Y }} color={INK.line} p={move(t, a1, 0.5)} flow={t} />
+      <Packets t={t} from={{ x: CX[0] + 245, y: CARD_Y }} to={{ x: CX[1] - 245, y: CARD_Y }} start={a1 + 0.3} end={a1 + 2.6} every={0.45} len={0.7} size={20} />
+      <Analogy x={CX[1]} t={t} at={a1 + 0.3} lit={vis(t, a1 + 0.3, a2, 0.35)} title="Ngăn theo tỉnh" line="mỗi tỉnh một bao tải">
         {['HN', 'ĐN', 'HCM'].map((p, i) => (
-          <MailBagIcon key={p} size={130} fill={lerp(0.2, [0.9, 0.7, 0.5][i], fillAt) * (1 - drive)} label={p} />
+          <div key={p}>
+            <Icon3D name="money-bag" x={CX[1] + bagX[i]} y={CARD_TOP + 85} size={120} t={t} at={a1 + 0.7 + i * 0.25} />
+            <div style={{ position: 'absolute', left: CX[1] + bagX[i] - 50, width: 100, top: CARD_TOP + 150, textAlign: 'center', fontSize: 26, fontWeight: 800, opacity: vis(t, a1 + 0.9 + i * 0.25) }}>{p}</div>
+            <div style={{ opacity: vis(t, a1 + 0.9 + i * 0.25) }}>
+              <Bar x={CX[1] + bagX[i] - 48} y={CARD_TOP + 192} w={96} h={16} fill={lerp(0.15, [0.9, 0.7, 0.5][i], fillAt) * (1 - drive)} />
+            </div>
+          </div>
         ))}
-      </AnalogyCard>
-      {arrow(X[1] + 250, X[2] - 250, a2 - 0.2)}
-      <AnalogyCard x={X[2]} t={t} at={a2 - 0.2} title="Xe tải theo tuyến" line="một chuyến chở mọi bao cùng tuyến" active={t >= a2}>
-        <div style={{ transform: `translateX(${lerp(-40, 60, drive)}px)` }}>
-          <TruckIcon size={320} t={t} moving={drive > 0 && drive < 1} />
-        </div>
-      </AnalogyCard>
-      {mapTo(X[0], 'send()', a0 + 2.0)}
-      {mapTo(X[1], 'partition → thùng', a1 + 1.0)}
-      {mapTo(X[2], 'sender thread', a2 + 1.0)}
-      <At x={X[0]} y={220}>
-        <Pill text="☎ thư tới nơi = callback" tone="green" size={34} o={sp(t, a2 + 3.0)} />
-      </At>
-      <At x={X[0]} y={220}>
-        <Burst t={t} at={a2 + 3.0} tone="green" r={150} />
-      </At>
-    </Scene>
+      </Analogy>
+      <Wire from={{ x: CX[1] + 245, y: CARD_Y }} to={{ x: CX[2] - 245, y: CARD_Y }} color={INK.line} p={move(t, a2, 0.5)} flow={t} />
+      <Packets t={t} from={{ x: CX[1] + 245, y: CARD_Y }} to={{ x: CX[2] - 245, y: CARD_Y }} start={a2 + 0.9} end={a2 + 2.3} every={0.25} len={0.6} size={20} />
+      <Analogy x={CX[2]} t={t} at={a2 + 0.3} lit={vis(t, a2 + 0.3, Infinity, 0.35)} title="Xe tải theo tuyến" line="một chuyến chở mọi bao cùng tuyến">
+        <Icon3D name="rocket" x={CX[2] + lerp(-40, 50, drive)} y={CARD_TOP + 115} size={180} t={t} at={a2 + 0.7} />
+      </Analogy>
+      {mapTo(CX[0], 'send()', a0 + 2.6)}
+      {mapTo(CX[1], 'partition → thùng', a1 + 1.4)}
+      {mapTo(CX[2], 'sender thread', a2 + 1.6)}
+      <Envelope t={t} at={a2 + 3.0} from={{ x: CX[2], y: 275 }} to={{ x: CX[0], y: 285 }} label="callback" color={INK.good} len={1.6} arc={90} />
+      <Icon3D name="bell" x={CX[0]} y={195} size={100} t={t} at={a2 + 4.6} />
+      <Tag x={960} y={960} text="thư tới nơi, bưu cục gọi báo = callback" hot={1} o={vis(t, a2 + 4.6)} />
+    </SoftScene>
   )
 }
 
@@ -300,214 +275,221 @@ function post(t: number, c: Cue) {
 
 function batching(t: number, c: Cue) {
   const [a0, a1, a2] = [c.at(0), c.at(1), c.at(2)]
-  const SRC = { x: 330, y: 540 }
-  const PART = [300, 540, 780].map((y) => ({ x: 900, y }))
-  const BRK = [
-    { x: 1580, y: 400, name: 'Broker 1', lead: 'leader P0, P1' },
-    { x: 1580, y: 780, name: 'Broker 2', lead: 'leader P2' },
-  ]
-  const brokerOf = (p: number) => (p === 2 ? 1 : 0)
-  // Naive phase: one request per message, straight to the broker.
-  const naiveEnd = a2 - 0.2
-  const naiveCount = Math.round(lerp(0, 1000, span(t, a1 + 0.2, naiveEnd)))
-  // Batching phase: messages drop into their partition's batch, then one request per broker.
+  const PY = [330, 540, 750]
+  const BY = [435, 750]
   const fillStart = a2 + 0.2
   const fillEnd = a2 + 2.0
+  const naiveEnd = a2 - 0.2
   const ship = move(t, fillEnd + 0.3, 1.1)
-  const shipped = t >= fillEnd + 1.4
-  const fly = (k: number, start: number, step: number, to: (k: number) => { x: number; y: number }, len = 0.55) => {
-    const at = start + k * step
-    const p = move(t, at, len)
-    if (t < at || p >= 1) return null
-    const d = to(k)
-    return <MsgChip key={`${start}-${k}`} x={lerp(SRC.x + 150, d.x, p)} y={lerp(SRC.y, d.y, p) - Math.sin(Math.PI * p) * 70} />
-  }
-  const cam = cameraAt(t, [
-    [0, { x: 960, y: 560, s: 1.05, rx: 12 }],
-    [a0 + 0.6, { x: 960, y: 560, s: 0.92 }, 1.4],
-    [a1 + 0.2, { x: 1000, y: 580, s: 0.9, ry: -3 }, 1.1],
-    [a2 + 0.2, { x: 820, y: 560, s: 1.0, ry: 4 }, 1.1],
-    [fillEnd + 0.3, { x: 1020, y: 580, s: 0.9, ry: -3 }, 1.2],
-  ])
+  const naiveCount = Math.round(lerp(0, 1000, span(tq(t), a1 + 0.2, naiveEnd)))
+  const dim = vis(t, a1 + 0.2, naiveEnd, 0.35)
+  const SRC = { x: 462, y: 540 }
+  const sentTo = (y: number) => ({ x: 680, y })
   return (
-    <Scene
-      t={t}
-      camera={cam}
-      overlay={
-        <>
-          <TitleCard t={t} at={0.1} kicker="GOM CHUYẾN" title="Thùng theo partition" dock={1.2} />
-          <At x={960} y={985} style={{ opacity: vis(t, a1 + 0.2, a2 - 0.2), padding: '10px 40px', borderRadius: 24, background: 'rgba(5,7,15,0.88)' }}>
-            <div style={{ fontSize: 96, fontWeight: 900, color: '#fecaca', textShadow: glow(NEON.red, 0.8), fontFamily: MONO, whiteSpace: 'nowrap' }}>{naiveCount.toLocaleString('vi-VN')} request</div>
-          </At>
-          <At x={960} y={985} style={{ opacity: vis(t, fillEnd + 1.3), padding: '10px 40px', borderRadius: 24, background: 'rgba(5,7,15,0.88)' }}>
-            <Kinetic t={t} at={fillEnd + 1.4} text="chỉ còn 2 request" size={96} color="#bbf7d0" glowColor={NEON.green} />
-          </At>
-        </>
-      }
-    >
-      <NeonCard x={SRC.x} y={SRC.y} w={380} h={220} kicker="PRODUCER" title="1.000 tin" sub="gửi vào 3 partition" o={sp(t, a0 + 0.2)} />
-      {PART.map((pt, i) => (
-        <NeonCard
-          key={i}
-          x={pt.x}
-          y={pt.y}
-          w={330}
-          h={200}
-          kicker={`THÙNG · P${i}`}
-          title={`P${i}`}
-          tone={t >= fillStart ? 'cyan' : 'blue'}
-          strong={t >= fillStart && !shipped}
-          fill={span(t, fillStart, fillEnd) * (1 - ship)}
-          o={sp(t, a0 + 0.5 + i * 0.15)}
-        />
-      ))}
-      {BRK.map((b, k) => (
-        <div key={b.name}>
-          <NeonCard x={b.x} y={b.y} w={400} h={230} kicker="BROKER" title={b.name} sub={b.lead} tone={shipped ? 'green' : 'blue'} strong={shipped} o={sp(t, a0 + 0.9 + k * 0.2)} />
-          <At x={b.x} y={b.y}>
-            <Burst t={t} at={fillEnd + 1.4 + k * 0.1} tone="green" r={220} />
-          </At>
+    <SoftScene t={t} camera={cameraAt(t, [[0, WIDE]])} title={{ kicker: 'GOM CHUYẾN', text: 'Thùng theo partition' }}>
+      <Rise t={t} at={a0 + 0.8}>
+        <ProducerBox x={100} y={490} title="producer" line="1.000 tin" w={360} />
+      </Rise>
+      {PY.map((y, i) => (
+        <div key={i} style={{ opacity: 1 - 0.7 * dim }}>
+          <Wire from={SRC} to={sentTo(y)} color={INK.line} p={move(t, a0 + 1.5 + i * 0.3, 0.5)} />
+          <Rise t={t} at={a0 + 1.4 + i * 0.3}>
+            <Card x={830} y={y} w={300} h={130} lit={vis(t, fillStart, fillEnd + 1.3, 0.35)}>
+              <div style={{ position: 'absolute', left: 26, top: 40, fontSize: 40, fontWeight: 800 }}>P{i}</div>
+              <Bar x={100} y={50} w={170} h={30} fill={span(t, fillStart, fillEnd) * (1 - ship)} />
+            </Card>
+          </Rise>
         </div>
       ))}
-      {/* Naive: every message is its own trip, the counter climbs to 1.000. */}
-      {t >= a1 && t < naiveEnd + 0.6 && Array.from({ length: Math.ceil((naiveEnd - a1) / 0.07) }, (_, k) => fly(k, a1 + 0.2, 0.07, (j) => BRK[brokerOf(j % 3)], 0.6))}
-      {/* Batching: messages fall into their partition's batch. */}
-      {t >= fillStart && t < fillEnd + 0.6 && Array.from({ length: 24 }, (_, k) => fly(k, fillStart, 0.075, (j) => PART[j % 3], 0.5))}
-      {/* One request per broker carries all of that broker's batches. */}
-      {t >= fillEnd + 0.3 && !shipped &&
-        BRK.map((b, k) => {
-          const parts = k === 0 ? [0, 1] : [2]
-          const from = k === 0 ? { x: 900, y: 420 } : PART[2]
-          return (
-            <At key={b.name} x={lerp(from.x + 170, b.x - 200, ship)} y={lerp(from.y, b.y, ship) - Math.sin(Math.PI * ship) * 60}>
-              <div style={{ display: 'flex', gap: 8, padding: 10, borderRadius: 14, border: `3px solid ${NEON.cyan}`, background: '#0b1630', boxShadow: glow(NEON.cyan, 0.7) }}>
-                {parts.map((p) => (
-                  <div key={p} style={{ width: 70, height: 46, borderRadius: 8, background: 'linear-gradient(180deg,#3b82f6,#1e40af)', fontSize: 24, fontWeight: 900, display: 'grid', placeItems: 'center' }}>P{p}</div>
-                ))}
-              </div>
-            </At>
-          )
-        })}
-    </Scene>
+      {BY.map((y, k) => (
+        <div key={k}>
+          <Rise t={t} at={a0 + 2.3 + k * 0.3}>
+            <ServerUnit x={1470} y={y - 65} name={`Broker ${k + 1}`} t={t} />
+          </Rise>
+          <Tag x={1600} y={y + 140} text={k === 0 ? 'leader P0, P1' : 'leader P2'} o={vis(t, a0 + 2.8 + k * 0.3)} size={28} />
+        </div>
+      ))}
+      {[0, 1, 2].map((i) => (
+        <Wire key={i} from={{ x: 982, y: PY[i] }} to={{ x: 1460, y: i === 0 ? 405 : i === 1 ? 465 : 750 }} color={INK.line} p={move(t, a0 + 2.9 + i * 0.1, 0.5)} />
+      ))}
+      <Icon3D name="tick" x={1815} y={BY[0]} size={90} t={t} at={fillEnd + 1.7} />
+      <Icon3D name="tick" x={1815} y={BY[1]} size={90} t={t} at={fillEnd + 1.8} />
+      {/* One message per trip: dots pour straight to the brokers, the counter climbs to 1.000. */}
+      <Packets t={t} from={SRC} to={{ x: 1430, y: BY[0] - 20 }} start={a1 + 0.2} end={naiveEnd} every={0.09} len={0.6} size={18} />
+      <Packets t={t} from={SRC} to={{ x: 1430, y: BY[1] }} start={a1 + 0.25} end={naiveEnd} every={0.18} len={0.6} size={18} />
+      {/* Batching: messages fall into their partition's bucket. */}
+      {PY.map((y, i) => (
+        <Packets key={i} t={t} from={SRC} to={sentTo(y)} start={fillStart + i * 0.05} end={fillEnd} every={0.2} len={0.5} size={18} />
+      ))}
+      <Envelope t={t} at={fillEnd + 0.3} from={{ x: 1090, y: BY[0] }} to={{ x: 1370, y: BY[0] }} label="P0 · P1" color={INK.accent} len={1.1} arc={0} />
+      <Envelope t={t} at={fillEnd + 0.3} from={{ x: 1090, y: BY[1] }} to={{ x: 1370, y: BY[1] }} label="P2" color={INK.accent} len={1.1} arc={0} />
+      <div style={{ position: 'absolute', left: 0, width: 1920, top: 915, textAlign: 'center', fontSize: 84, fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: INK.bad, whiteSpace: 'nowrap', opacity: vis(t, a1 + 0.2, a2 - 0.2, 0.35), textShadow: `0 0 24px ${INK.bad}88` }}>{fmt(naiveCount)} request</div>
+      <Say y={915} text="chỉ còn 2 request" color={INK.good} size={84} o={sp(t, fillEnd + 1.4)} />
+    </SoftScene>
   )
 }
 
 /* ------------------------------------------------------------------ 4. linger.ms vs batch.size */
 
-/** A conveyor of batches leaving every `interval` seconds; batch width ∝ messages per request. */
-function Conveyor({ t, y, start, interval, size, labelText }: { t: number; y: number; start: number; interval: number; size: number; labelText: string }) {
+/** A lane of batches leaving every `interval` seconds; block width is proportional to messages per request. */
+function Lane({ t, y, start, interval, bw, o }: { t: number; y: number; start: number; interval: number; bw: number; o: number }) {
+  const X0 = 480
+  const X1 = 1420
+  const TRAVEL = 2.8
   const n = Math.max(0, Math.floor((t - start) / interval) + 1)
+  const first = Math.max(0, Math.floor((t - TRAVEL - start) / interval))
+  const out: ReactNode[] = []
+  for (let k = first; k < n; k++) {
+    const p = (t - (start + k * interval)) / TRAVEL
+    if (p < 0 || p >= 1) continue
+    out.push(
+      <div key={k} style={{ position: 'absolute', left: lerp(X0, X1, p) - bw / 2, top: y - 38, width: bw, height: 76, borderRadius: 12, background: HERO, boxShadow: '0 0 18px rgba(77,141,255,0.6), inset 0 2px 0 rgba(255,255,255,0.5)', opacity: Math.min(1, p * 8, (1 - p) * 8) }} />,
+    )
+  }
   return (
-    <>
-      <div style={{ position: 'absolute', left: 360, top: y - 50, width: 1300, height: 100, borderRadius: 18, border: '2px solid #334155', background: 'repeating-linear-gradient(90deg, rgba(148,163,184,0.06) 0 40px, transparent 40px 80px)', backgroundPosition: `${t * 120}px 0` }} />
-      <div style={{ position: 'absolute', left: 120, top: y - 22, width: 220, fontFamily: MONO, fontSize: 30, fontWeight: 800, color: '#e2e8f0' }}>{labelText}</div>
-      {Array.from({ length: Math.min(n, 40) }, (_, k) => {
-        const idx = n - 1 - k
-        const born = start + idx * interval
-        const x = 380 + (t - born) * 420
-        if (x > 1660) return null
-        return <div key={idx} style={{ position: 'absolute', left: x, top: y - 18 - size / 2, width: size, height: 36 + size, borderRadius: 8, background: NEON.blue, opacity: 0.9, boxShadow: glow(NEON.blue, 0.3) }} />
-      })}
-    </>
+    <div style={{ opacity: o }}>
+      <div style={{ position: 'absolute', left: X0 - 20, top: y - 3, width: X1 - X0 + 40, height: 6, borderRadius: 3, background: INK.line, opacity: 0.6 }} />
+      {out}
+    </div>
   )
 }
 
 function linger(t: number, c: Cue) {
   const [a0, a1, a2, a3] = [c.at(0), c.at(1), c.at(2), c.at(3)]
-  // Beat 0: one batch, two ways to leave: fill bar or timer, whichever first.
-  const fill = span(t, a0 + 0.8, a0 + 4.2)
-  const timer = span(t, a0 + 0.8, a0 + 3.2)
-  const gone = t >= a0 + 3.2
+  // Beat 0: one bucket, two ways to leave. The timer runs out first, so the half-full bucket goes.
+  const done = a0 + 3.2
+  const fill = 0.7 * span(tq(t), a0 + 1.4, done) * (1 - move(t, done + 0.5, 0.6))
+  const timer = span(tq(t), a0 + 1.4, done)
+  const timerHot = span(t, done, done + 0.35)
+  const gone = vis(t, 0, a1 - 0.5, 0.35)
   const cam = cameraAt(t, [
-    [0, { x: 960, y: 520, s: 1.15, rx: 10 }],
-    [a1 - 0.2, { x: 1000, y: 560, s: 0.96 }, 1.2],
-    [a3 - 0.1, { x: 1000, y: 640, s: 1.02 }, 1.1],
+    [0, WIDE],
+    [a1, { x: 960, y: 500, s: 1 }, 1.2],
+    [a2, { x: 960, y: 540, s: 1 }, 1.2],
   ])
+  const R = 70
+  const row = (y: number, o: number, label: string, big: string, small: string, at: number) => (
+    <div style={{ opacity: o }}>
+      <Rise t={t} at={at}>
+        <Card x={250} y={y} w={380} h={150}>
+          <div style={{ position: 'absolute', left: 0, right: 0, top: 24, textAlign: 'center', fontSize: 28, fontWeight: 700, color: INK.faint }}>cấu hình</div>
+          <div style={{ position: 'absolute', left: 0, right: 0, top: 66, textAlign: 'center', fontSize: 44, fontWeight: 800, fontFamily: MONO }}>{label}</div>
+        </Card>
+        <Card x={1680} y={y} w={380} h={190} lit={0.6}>
+          <div style={{ position: 'absolute', left: 0, right: 0, top: 18, textAlign: 'center', fontSize: 64, fontWeight: 800, letterSpacing: -1 }}>{big}</div>
+          <div style={{ position: 'absolute', left: 0, right: 0, top: 104, textAlign: 'center', fontSize: 30, fontWeight: 700 }}>{small}</div>
+        </Card>
+      </Rise>
+    </div>
+  )
   return (
-    <Scene t={t} camera={cam} overlay={<TitleCard t={t} at={0.1} kicker="LINGER.MS" title="Khi nào thùng được gửi?" dock={1.2} />}>
-      <At x={960} y={420} style={{ opacity: vis(t, -1, a1 - 0.2) }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 70 }}>
-          <div style={{ width: 420, transform: `translate(${gone ? move(t, a0 + 3.2, 0.7) * 260 : 0}px, ${gone ? move(t, a0 + 3.2, 0.7) * -260 : 0}px)`, opacity: gone ? 1 - span(t, a0 + 3.4, a0 + 3.9) : 1 }}>
-            <div style={{ ...label }}>THÙNG P1 · batch.size 16 KB</div>
-            <div style={{ height: 80, borderRadius: 14, border: `3px solid ${NEON.blue}`, marginTop: 10, overflow: 'hidden', background: '#0f1525' }}>
-              <div style={{ width: `${fill * 100}%`, height: '100%', background: '#3b5b9a' }} />
-            </div>
-            <div style={{ fontFamily: MONO, fontSize: 28, marginTop: 8, color: SLATE }}>{Math.round(fill * 16)} / 16 KB</div>
-          </div>
-          <svg width={180} height={180} viewBox="0 0 100 100">
-            <circle cx="50" cy="50" r="42" fill="none" stroke="#334155" strokeWidth="8" />
-            <circle cx="50" cy="50" r="42" fill="none" stroke={gone ? NEON.green : NEON.blue} strokeWidth="8" pathLength={1} strokeDasharray="1 1" strokeDashoffset={1 - timer} transform="rotate(-90 50 50)" />
-            <text x="50" y="47" textAnchor="middle" fontSize="13" fontWeight="800" fill={SLATE}>linger</text>
-            <text x="50" y="65" textAnchor="middle" fontSize="16" fontWeight="900" fill="#e2e8f0" fontFamily="monospace">{Math.round(timer * 10)} ms</text>
-          </svg>
-        </div>
-      </At>
-      <At x={960} y={640}>
-        <Pill text="hết linger trước → gửi, dù chưa đầy" tone="green" size={32} o={Math.min(sp(t, a0 + 3.3), vis(t, 0, a1 - 0.2))} />
-      </At>
-      <div style={{ opacity: vis(t, a1 - 0.3) }}>
-        <Conveyor t={t} y={380} start={a1} interval={0.12} size={6} labelText="linger 0" />
-        <Conveyor t={t} y={700} start={a2} interval={1.0} size={60} labelText="linger 50" />
+    <SoftScene t={t} camera={cam} title={{ kicker: 'LINGER.MS', text: 'Khi nào thùng được gửi?' }}>
+      <div style={{ opacity: gone }}>
+        <Rise t={t} at={a0 + 0.9}>
+          <Card x={430} y={450} w={640} h={300}>
+            <div style={{ position: 'absolute', left: 40, top: 28, fontSize: 30, fontWeight: 700, color: INK.faint }}>THÙNG P1 · batch.size 16 KB</div>
+            <Bar x={40} y={110} w={560} h={70} fill={fill} />
+            <div style={{ position: 'absolute', left: 0, right: 0, top: 210, textAlign: 'center', fontSize: 44, fontWeight: 800, fontFamily: MONO, fontVariantNumeric: 'tabular-nums' }}>{(fill * 16).toFixed(0)} / 16 KB</div>
+          </Card>
+        </Rise>
+        <Rise t={t} at={a0 + 1.3}>
+          <Card x={1060} y={450} w={360} h={300}>
+            <div style={{ position: 'absolute', left: 0, right: 0, top: 22, textAlign: 'center', fontSize: 28, fontWeight: 700, color: INK.faint }}>linger.ms = 10</div>
+            <svg width={200} height={200} viewBox="0 0 200 200" style={{ position: 'absolute', left: 80, top: 80 }}>
+              <circle cx="100" cy="100" r={R + 14} fill="none" stroke="rgba(110,160,255,0.3)" strokeWidth="14" />
+              <circle cx="100" cy="100" r={R + 14} fill="none" stroke={INK.accent} strokeWidth="14" strokeLinecap="round" pathLength={1} strokeDasharray="1 1" strokeDashoffset={1 - timer} transform="rotate(-90 100 100)" opacity={1 - timerHot} />
+              <circle cx="100" cy="100" r={R + 14} fill="none" stroke={INK.good} strokeWidth="14" strokeLinecap="round" transform="rotate(-90 100 100)" opacity={timerHot} />
+              <text x="100" y="112" textAnchor="middle" fontSize="40" fontWeight="800" fill="#ffffff" fontFamily={MONO}>
+                {Math.round(timer * 10)} ms
+              </text>
+            </svg>
+          </Card>
+        </Rise>
+        <Tag x={430} y={680} text="① thùng đầy batch.size" o={vis(t, a0 + 1.0)} />
+        <Tag x={1060} y={680} text="② hết linger.ms" o={vis(t, a0 + 1.6)} hot={timerHot} />
+        <Tag x={745} y={790} text="→ gửi ngay, dù chưa đầy" hot={1} o={vis(t, done + 0.3)} size={34} />
+        <Rise t={t} at={done - 0.6}>
+          <ServerUnit x={1450} y={385} name="broker" t={t} />
+        </Rise>
+        <Envelope t={t} at={done + 0.5} from={{ x: 730, y: 450 }} to={{ x: 1370, y: 450 }} label="batch" color={INK.good} len={1.2} arc={190} />
       </div>
-      <At x={1010} y={490}>
-        <Pill text="~20 tin / request · ~25 request/giây" tone="sky" size={30} o={sp(t, a1 + 0.8)} />
-      </At>
-      <At x={1010} y={810}>
-        <Pill text="~220 tin / request · ~3 request/giây" tone="sky" size={30} o={sp(t, a2 + 0.8)} />
-      </At>
-      <At x={960} y={960} style={{ display: 'flex', gap: 30, opacity: vis(t, a3 + 0.2) }}>
-        <Pill text="ít request hơn ~10 lần" tone="green" size={34} />
-        <Pill text="mỗi tin chờ thêm vài chục ms" tone="amber" size={34} />
-      </At>
-    </Scene>
+      {row(420, vis(t, a1 - 0.3), 'linger.ms = 0', '~20 tin', '~25 request/giây', a1 - 0.3)}
+      {row(690, vis(t, a2 - 0.3), 'linger.ms = 50', '~220 tin', '~3 request/giây', a2 - 0.3)}
+      <Lane t={t} y={420} start={a1} interval={0.16} bw={24} o={vis(t, a1 - 0.3)} />
+      <Lane t={t} y={690} start={a2} interval={1.4} bw={130} o={vis(t, a2 - 0.3)} />
+      <Rise t={t} at={a3 + 0.3}>
+        <Card x={540} y={890} w={760} h={120}>
+          <div style={{ position: 'absolute', left: 150, right: 20, top: 0, bottom: 0, display: 'flex', alignItems: 'center', fontSize: 34, fontWeight: 800, color: INK.warn }}>mỗi tin chờ thêm vài chục ms</div>
+        </Card>
+        <Icon3D name="clock" x={230} y={890} size={110} t={t} at={a3 + 0.4} />
+      </Rise>
+      <Rise t={t} at={a3 + 2.6}>
+        <Card x={1400} y={890} w={760} h={120}>
+          <div style={{ position: 'absolute', left: 150, right: 20, top: 0, bottom: 0, display: 'flex', alignItems: 'center', fontSize: 34, fontWeight: 800, color: INK.good }}>ít request hơn ~10 lần</div>
+        </Card>
+        <Icon3D name="thumb-up" x={1400 - 380 + 70} y={890} size={110} t={t} at={a3 + 2.7} />
+      </Rise>
+    </SoftScene>
   )
 }
 
 /* ------------------------------------------------------------------ 5. buffer.memory full */
 
 function buffer(t: number, c: Cue) {
-  const [a1, a2] = [c.at(1), c.at(2)]
-  const level = clamp(lerp(0.15, 1, span(t, a1 - 0.3, a2 + 0.3)))
-  const full = level >= 1
-  const countdown = Math.max(0, 60 - Math.round(span(t, a2 + 0.8, a2 + 3.0) * 60))
-  const cam = cameraAt(t, [
-    [0, { x: 960, y: 560, s: 1.1, rx: 10 }],
-    [a1 - 0.2, { x: 960, y: 560, s: 1.0 }, 1.2],
-    [a2 + 0.2, { x: 860, y: 520, s: 1.12, ry: 4 }, 1.0],
-  ])
+  const [a0, a1, a2] = [c.at(0), c.at(1), c.at(2)]
+  const full = a2 + 0.1
+  const level = clamp(lerp(0.15, 1, span(t, a1 + 0.3, full)))
+  const idle = lerp(0.08, 0.15, span(t, a0, a1 + 0.3))
+  const lv = t < a1 + 0.3 ? idle : level
+  const fullK = span(t, full, full + 0.4)
+  const blocked = span(t, a2 + 0.2, a2 + 0.6)
+  const shown = Math.round((t < a1 + 0.3 ? lv : clamp(lerp(0.15, 1, span(tq(t), a1 + 0.3, full)))) * 32)
+  const left = Math.max(0, 60 - Math.round(span(tq(t), a2 + 1.0, a2 + 3.0) * 60))
+  const TANK = { x: 960, y: 560, w: 520, h: 560 }
+  const liquid = (bg: string, o: number) => (
+    <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: `${lv * 100}%`, background: bg, opacity: o, boxShadow: 'inset 0 4px 0 rgba(255,255,255,0.55)' }} />
+  )
   return (
-    <Scene t={t} camera={cam} overlay={<TitleCard t={t} at={0.1} kicker="BUFFER.MEMORY" title="Khi kho đầy" tone="red" dock={1.2} />}>
-      <At x={300} y={560}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ ...label }}>APP GỬI VÀO</div>
-          <div style={{ fontSize: 64, fontWeight: 900, fontFamily: MONO, color: full ? NEON.red : '#e2e8f0' }}>50 MB/s</div>
-          <div style={{ fontSize: 40, color: full ? NEON.red : SLATE }}>→</div>
-        </div>
-      </At>
-      <At x={960} y={560}>
-        <div style={{ position: 'relative', width: 560, height: 560, borderRadius: 30, border: `4px dashed ${full ? NEON.red : '#64748b'}`, background: 'rgba(15,21,37,0.85)', overflow: 'hidden' }}>
-          <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: `${level * 100}%`, background: full ? 'linear-gradient(180deg,#b91c1c,#7f1d1d)' : 'linear-gradient(180deg,#3b5b9a,#1e3a8a)' }} />
-          <div style={{ position: 'absolute', left: 30, top: 24, ...label, color: '#cbd5e1' }}>buffer.memory · RAM</div>
-          <div style={{ position: 'absolute', left: 0, right: 0, top: 230, textAlign: 'center', fontSize: 80, fontWeight: 900, fontFamily: MONO, whiteSpace: 'nowrap' }}>{Math.round(level * 32)} / 32 MB</div>
-        </div>
-      </At>
-      <At x={1600} y={560}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ ...label }}>MẠNG CHỞ ĐI</div>
-          <div style={{ fontSize: 64, fontWeight: 900, fontFamily: MONO }}>20 MB/s</div>
-          <div style={{ fontSize: 40, color: SLATE }}>→</div>
-        </div>
-      </At>
-      <At x={960} y={230}>
-        <Pill text="send() bị chặn…" tone="red" size={40} o={sp(t, a2 + 0.3)} />
-      </At>
-      <At x={960} y={940}>
-        <Pill text={`chờ tối đa max.block.ms: còn ${countdown} s`} tone="amber" size={34} o={Math.min(sp(t, a2 + 0.8), vis(t, 0, a2 + 3.2))} style={{ fontFamily: MONO }} />
-      </At>
-      <At x={960} y={560}>
-        <Stamp t={t} at={a2 + 3.2} text="TimeoutException" size={64} />
-      </At>
-    </Scene>
+    <SoftScene t={t} camera={cameraAt(t, [[0, WIDE]])} title={{ kicker: 'BUFFER.MEMORY', text: 'Khi kho đầy' }}>
+      <Rise t={t} at={a0 + 1.0}>
+        <Card x={TANK.x} y={TANK.y} w={TANK.w} h={TANK.h} bad={fullK}>
+          <div style={{ position: 'absolute', inset: 0, borderRadius: 22, overflow: 'hidden' }}>
+            {liquid('linear-gradient(180deg, rgba(106,168,255,0.85), rgba(26,60,192,0.9))', 1 - fullK)}
+            {liquid('linear-gradient(180deg, rgba(255,120,130,0.9), rgba(150,20,40,0.95))', fullK)}
+          </div>
+          <div style={{ position: 'absolute', left: 0, right: 0, top: 24, textAlign: 'center', fontSize: 28, fontWeight: 700, color: INK.faint }}>buffer.memory · RAM</div>
+          <div style={{ position: 'absolute', left: 0, right: 0, top: 74, textAlign: 'center', fontSize: 66, fontWeight: 800, fontVariantNumeric: 'tabular-nums', letterSpacing: -1 }}>{shown} / 32 MB</div>
+        </Card>
+      </Rise>
+      {['P0', 'P1', 'P2'].map((p, i) => (
+        <Rise key={p} t={t} at={a0 + 2.4 + i * 0.7}>
+          <Tag x={790 + i * 170} y={530} text={`thùng ${p}`} size={26} />
+        </Rise>
+      ))}
+      <Rise t={t} at={a1 - 0.2}>
+        <ProducerBox x={100} y={470} title="ứng dụng gửi vào" line="50 MB/s" w={380} />
+      </Rise>
+      <div style={{ opacity: 1 - blocked }}>
+        <Wire from={{ x: 490, y: 520 }} to={{ x: 698, y: 520 }} color={INK.line} p={move(t, a1 + 0.1, 0.5)} flow={t} />
+      </div>
+      <div style={{ opacity: blocked }}>
+        <Wire from={{ x: 490, y: 520 }} to={{ x: 698, y: 520 }} color={INK.bad} dashed p={1} />
+      </div>
+      <Packets t={t} from={{ x: 490, y: 520 }} to={{ x: 698, y: 520 }} start={a1 + 0.3} end={a2 + 0.1} every={0.1} len={0.5} size={18} />
+      <Rise t={t} at={a1 + 0.1}>
+        <Card x={1630} y={520} w={380} h={170} lit={0.6}>
+          <div style={{ position: 'absolute', left: 0, right: 0, top: 20, textAlign: 'center', fontSize: 28, fontWeight: 700 }}>mạng chở đi</div>
+          <div style={{ position: 'absolute', left: 0, right: 0, top: 72, textAlign: 'center', fontSize: 62, fontWeight: 800 }}>20 MB/s</div>
+        </Card>
+      </Rise>
+      <Wire from={{ x: 1222, y: 520 }} to={{ x: 1432, y: 520 }} color={INK.line} p={move(t, a1 + 0.6, 0.5)} flow={t} />
+      <Packets t={t} from={{ x: 1222, y: 520 }} to={{ x: 1432, y: 520 }} start={a1 + 0.9} every={0.35} len={0.6} size={18} />
+      <Tag x={290} y={650} text="send() bị chặn…" color={INK.bad} hot={1} o={vis(t, a2 + 0.3)} size={32} />
+      <Icon3D name="pause" x={290} y={790} size={120} t={t} at={a2 + 0.6} />
+      <Tag x={960} y={925} text={`chờ tối đa max.block.ms: còn ${left} s`} color={INK.warn} hot={1} o={vis(t, a2 + 1.0, a2 + 3.0, 0.35)} size={32} />
+      <Tag x={960} y={925} text="TimeoutException" color={INK.bad} hot={1} o={vis(t, a2 + 3.2)} size={54} />
+      <Icon3D name="fire" x={1300} y={300} size={130} t={t} at={a2 + 3.3} />
+    </SoftScene>
   )
 }
 
@@ -515,26 +497,35 @@ function buffer(t: number, c: Cue) {
 
 function summary(t: number, c: Cue) {
   return (
-    <SummaryGrid
-      t={t}
-      cue={c}
-      cards={[
-        { title: 'send() ≠ đã tới broker', body: 'trả về khi tin vào thùng trong RAM', tone: 'blue' },
-        { title: 'Thùng · chuyến', body: 'thùng theo partition, chuyến theo broker', tone: 'blue' },
-        { title: 'Đầy hoặc hết linger', body: 'batch.size hay linger.ms, cái nào tới trước', tone: 'amber' },
-        { title: 'flush() / close()', body: 'trước khi tắt app, kẻo mất tin', tone: 'red' },
-      ]}
-    />
+    <SoftTheme>
+      <SummaryList t={t} cue={c} items={['send() trả về khi tin vào thùng trong RAM', 'Thùng theo partition · chuyến theo broker', 'Đầy batch.size hoặc hết linger.ms', 'Trước khi tắt app: flush() / close()']} />
+    </SoftTheme>
   )
 }
 
 const RENDERS: Record<string, LessonScene['render']> = { hook, pipeline, post, batching, linger, buffer, summary }
 
+/** Key-moment sounds, timed to the same cue offsets the scenes animate on. */
+const SFX: Record<string, SceneSfx[]> = {
+  hook: [{ kind: 'error', at: (c) => c.at(1) + 2.3 }],
+  pipeline: [
+    { kind: 'ding', at: (c) => c.at(2) + 3.0 },
+    { kind: 'ding', at: (c) => c.at(3) + 4.3 },
+  ],
+  post: [{ kind: 'ding', at: (c) => c.at(2) + 4.6 }],
+  batching: [{ kind: 'ding', at: (c) => c.at(2) + 2.0 + 1.4 }],
+  linger: [{ kind: 'ding', at: (c) => c.at(0) + 3.2 + 0.5 + 1.2 }],
+  buffer: [
+    { kind: 'error', at: (c) => c.at(2) + 0.1 },
+    { kind: 'error', at: (c) => c.at(2) + 3.2 },
+  ],
+}
+
 const q = (prompt: string, options: string[], answer: number, explain: string) => ({ kind: 'choice' as const, prompt, options, answer, explain })
 
 export const producerJourneyLesson: Lesson = {
   ...producerJourneyScript,
-  scenes: producerJourneyScript.scenes.map((s) => ({ ...s, render: RENDERS[s.id] })),
+  scenes: producerJourneyScript.scenes.map((s) => ({ ...s, render: RENDERS[s.id], sfx: SFX[s.id] })),
   intro: [
     { kind: 'video', scenes: ['hook'] },
     {

@@ -1,49 +1,38 @@
 import type { CSSProperties } from 'react'
-import {
-  At,
-  Burst,
-  CodeWindow,
-  GearIcon,
-  Kinetic,
-  NEON,
-  Panel,
-  Pill,
-  PlaneIcon,
-  Scene,
-  Stamp,
-  SummaryGrid,
-  TitleCard,
-  cameraAt,
-  clamp,
-  glow,
-  lerp,
-  move,
-  sp,
-  span,
-  vis,
-  type Neon,
-  type Shot,
-} from '../player/motion-kit'
-import type { Cue, Lesson, Scene as LessonScene } from '../player/types'
+import { cameraAt, clamp, lerp, move, sp, span, vis, type Shot } from '../player/motion-kit'
+import { ConsumerUnit, HERO, Icon3D, LogTape, Packets, ProducerBox, Rise, SOFT, SOFT_PANEL, Sheen, SoftScene, SoftTheme, Statement, SummaryList, Wire } from '../player/schematic'
+import type { Cue, Lesson, Scene as LessonScene, SceneSfx } from '../player/types'
 import { MONO } from '../remotion/video-fonts'
 import { keyPartitionScript } from './key-partition-script'
 
+/** This lesson is drawn in the navy glow style. */
+const INK = SOFT
+const HERO_SHADOW = '0 0 34px rgba(77,141,255,0.6), 0 24px 50px rgba(0,4,30,0.6), inset 0 2px 0 rgba(255,255,255,0.5), inset 0 -8px 16px rgba(0,10,60,0.35)'
+const WIDE: Shot = { x: 960, y: 540, s: 1 }
+
 /* Toy hash values chosen so the arithmetic is easy to follow on screen. */
 const HASH: Record<string, number> = { A: 7, B: 9, C: 14 }
-const KEY_TONE: Record<string, Neon> = { A: 'cyan', B: 'violet', C: 'amber' }
-const KEY_GRAD: Record<string, [string, string]> = { A: ['#0891b2', '#155e75'], B: ['#7c3aed', '#4c1d95'], C: ['#d97706', '#78350f'] }
+const KEY_LOOK: Record<string, { grad: string; glow: string }> = {
+  A: { grad: 'linear-gradient(160deg,#9cc4ff 0%,#3f78f5 55%,#1c3fc4 100%)', glow: '#5b97ff' },
+  B: { grad: 'linear-gradient(160deg,#8ff5cb 0%,#22c488 55%,#0e7a52 100%)', glow: '#3ee6a0' },
+  C: { grad: 'linear-gradient(160deg,#ffd98a 0%,#f0a43a 55%,#b36a10 100%)', glow: '#ffb547' },
+}
+const RED_GRAD = 'linear-gradient(160deg,#ff9aa5 0%,#ff5a6a 55%,#b81f33 100%)'
 
-/* World layout (1920×1080 world; consumers live off-screen to the right so the camera can travel to them). */
-const PRODUCER = { x: 250, y: 560 }
-const MACHINE = { x: 720, y: 560 }
-const LANE_X = 1080
-const LANE_W = 840
-const CONSUMER_X = 2110
-const laneY = (i: number, q: number) => lerp(340 + i * 220, 290 + i * 170, q)
-const laneH = (q: number) => lerp(140, 118, q)
-const slotX = (slot: number) => LANE_X + 90 + slot * 122
-
-const WIDE: Shot = { x: 1000, y: 560, s: 0.86 }
+/* World layout (1920×1080): producer → partitioner → partition tapes → consumers, all on one horizontal axis. */
+const PROD = { x: 90, y: 490, w: 300 }
+const MACH = { cx: 640, cy: 540, w: 320, h: 250 }
+const TX = 1000
+const CW = 80
+const CELLS = 6
+const LANE_END = TX + CELLS * CW
+const CONS_X = 1580
+const WAIT = { x: MACH.cx, y: MACH.cy - 170 }
+const laneTop = (i: number, q: number) => lerp(320 + i * 200, 270 + i * 165, q)
+const laneY = (i: number, q: number) => laneTop(i, q) + 35
+/* LogTape prints offsetOf(i) as text; an empty string hides the tick label (these tapes show chips, not offsets). */
+const NO_OFFSET = (() => '') as unknown as (i: number) => number
+const slotX = (slot: number) => TX + slot * CW + CW / 2
 
 interface Msg {
   label: string
@@ -85,468 +74,493 @@ const secondWave = (c: Cue) => {
   )
 }
 
-/** Spot on top of the partitioner where a message waits (fully visible) while its partition is computed. */
-const WAIT = { x: MACHINE.x, y: MACHINE.y - 168 }
-
-/** Where a message is at time t: producer → hops onto the partitioner → arcs into its lane slot. */
+/** Where a message is at time t: producer → hops onto the partitioner → arcs into its lane slot. `land` = 0..1 of the last hop. */
 function flight(m: Placed, t: number, q: number) {
   const a = move(t, m.start, 0.5)
-  const b = move(t, m.start + 1.1, 0.65)
+  const land = move(t, m.start + 1.1, 0.65)
   const tx = slotX(m.slot)
   const ty = laneY(m.p, q)
-  const x = b > 0 ? lerp(WAIT.x, tx, b) : lerp(PRODUCER.x + 150, WAIT.x, a)
-  const y = b > 0 ? lerp(WAIT.y, ty, b) - Math.sin(Math.PI * b) * 120 : lerp(PRODUCER.y, WAIT.y, a) - Math.sin(Math.PI * a) * 60
-  return { x, y, visible: t >= m.start, inMachine: t >= m.start + 0.45 && t < m.start + 1.2, flying: t < m.start + 1.75 }
+  const x = land > 0 ? lerp(WAIT.x, tx, land) : lerp(PROD.x + 330, WAIT.x, a)
+  const y = land > 0 ? lerp(WAIT.y, ty, land) - Math.sin(Math.PI * land) * 110 : lerp(PROD.y + 50, WAIT.y, a) - Math.sin(Math.PI * a) * 50
+  return { x, y, land }
 }
 
-function Chip({ x, y, label, glowOn, tone }: { x: number; y: number; label: string; glowOn?: boolean; tone?: Neon }) {
-  const key = label[0]
-  const [from, to] = KEY_GRAD[key] ?? ['#334155', '#1e293b']
-  const c = NEON[tone ?? KEY_TONE[key] ?? 'white']
+/** Pill with a luminous outline (labels, formulas, verdicts). Centred on (x, y). */
+function GlowPill({ x, y, text, o = 1, color = '#6ea2ff', size = 30, mono = false }: { x: number; y: number; text: string; o?: number; color?: string; size?: number; mono?: boolean }) {
+  const k = clamp(o)
+  if (k <= 0) return null
   return (
     <div
       style={{
         position: 'absolute',
-        left: x - 48,
-        top: y - 36,
-        width: 96,
-        height: 72,
-        borderRadius: 16,
-        background: tone === 'red' ? 'linear-gradient(180deg,#dc2626,#7f1d1d)' : tone === 'green' ? 'linear-gradient(180deg,#16a34a,#14532d)' : `linear-gradient(180deg, ${from}, ${to})`,
-        border: `3px solid ${c}`,
-        boxShadow: `${glowOn ? glow(c, 0.9) + ', ' : ''}inset 0 3px 0 rgba(255,255,255,0.25), 0 12px 20px rgba(0,0,0,0.5)`,
-        display: 'grid',
-        placeItems: 'center',
-        fontSize: 32,
-        fontWeight: 900,
-        color: '#fff',
+        left: x,
+        top: y,
+        transform: `translate(-50%, calc(-50% + ${(1 - k) * 14}px))`,
+        padding: '10px 26px',
+        borderRadius: 999,
+        background: 'rgba(8,22,82,0.92)',
+        border: `1.5px solid ${color}`,
+        boxShadow: `0 0 18px ${color}aa, inset 0 1px 0 rgba(255,255,255,0.15)`,
+        color: '#ffffff',
+        fontSize: size,
+        fontWeight: 800,
+        fontFamily: mono ? MONO : undefined,
+        whiteSpace: 'nowrap',
+        opacity: k,
       }}
     >
-      {label}
+      {text}
     </div>
   )
 }
 
-/** A message in flight plus a fading trail of where it just was (only while it is moving). */
-function FlyingChip({ m, t, q, tone, glowOn }: { m: Placed; t: number; q: number; tone?: Neon; glowOn?: boolean }) {
+/** One message as a glossy tile exactly the size of a tape cell. `lit` adds a white rim, `red` cross-fades to the error colour. */
+function Chip({ x, y, label, o = 1, lit = 0, red = 0 }: { x: number; y: number; label: string; o?: number; lit?: number; red?: number }) {
+  const look = KEY_LOOK[label[0]] ?? KEY_LOOK.A
+  const w = CW - 6
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: x - w / 2,
+        top: y - 35,
+        width: w,
+        height: 70,
+        boxSizing: 'border-box',
+        borderRadius: 14,
+        overflow: 'hidden',
+        background: look.grad,
+        border: `2px solid rgba(255,255,255,${0.35 + 0.6 * lit})`,
+        boxShadow: `inset 0 2px 0 rgba(255,255,255,0.55), 0 0 ${12 + 26 * lit}px ${look.glow}, 0 0 ${28 * red}px ${INK.bad}, 0 8px 16px rgba(0,8,50,0.5)`,
+        display: 'grid',
+        placeItems: 'center',
+        opacity: clamp(o),
+      }}
+    >
+      <div style={{ position: 'absolute', inset: 0, background: RED_GRAD, opacity: red }} />
+      <span style={{ position: 'relative', fontSize: 32, fontWeight: 800, color: '#ffffff', textShadow: '0 2px 6px rgba(0,0,40,0.55)' }}>{label}</span>
+    </div>
+  )
+}
+
+/** A message in the air or landed in its slot: one element, so landing never swaps anything. */
+function MsgChip({ m, t, q, red = 0, lit = 0 }: { m: Placed; t: number; q: number; red?: number; lit?: number }) {
+  if (t < m.start) return null
   const f = flight(m, t, q)
-  if (!f.visible) return null
-  const moving = f.flying && !f.inMachine
+  return <Chip x={f.x} y={f.y} label={m.label} o={span(t, m.start, m.start + 0.2)} lit={Math.max(lit, 1 - f.land)} red={red} />
+}
+
+/** Expanding ring where a message lands. */
+function Ring({ x, y, t, at, color }: { x: number; y: number; t: number; at: number; color: string }) {
+  const p = span(t, at, at + 0.7)
+  if (p <= 0 || p >= 1) return null
+  const w = (CW - 6) * (1 + 0.6 * p)
+  const h = 70 * (1 + 0.6 * p)
+  return <div style={{ position: 'absolute', left: x - w / 2, top: y - h / 2, width: w, height: h, borderRadius: 18, border: `3px solid ${color}`, opacity: 1 - p, boxSizing: 'border-box' }} />
+}
+
+/** A partition: P-label pill + empty tape. `hot` cross-fades the label to red; `fresh` marks a newly added partition. */
+function Lane({ x, y, cw, cells = CELLS, label, o = 1, fresh = false, hot = 0 }: { x: number; y: number; cw: number; cells?: number; label: string; o?: number; fresh?: boolean; hot?: number }) {
+  const pill: CSSProperties = { position: 'absolute', left: x - 96, top: y + 9, width: 76, height: 52, borderRadius: 999, display: 'grid', placeItems: 'center', fontSize: 30, fontWeight: 800, color: '#ffffff', boxSizing: 'border-box' }
+  const edge = fresh ? INK.good : '#6ea2ff'
   return (
-    <>
-      {moving &&
-        [4, 3, 2, 1].map((k) => {
-          const g = flight(m, t - k * 0.035, q)
-          return (
-            <div key={k} style={{ opacity: 0.22 * (1 - k / 5), filter: `blur(${k * 1.5}px)` }}>
-              <Chip x={g.x} y={g.y} label={m.label} tone={tone} />
-            </div>
-          )
-        })}
-      <Chip x={f.x} y={f.y} label={m.label} tone={tone} glowOn={glowOn ?? f.flying} />
-    </>
+    <div style={{ opacity: clamp(o) }}>
+      <div style={{ ...pill, background: 'rgba(8,22,82,0.92)', border: `1.5px solid ${edge}`, boxShadow: `0 0 16px ${edge}aa` }}>{label}</div>
+      <div style={{ ...pill, background: 'rgba(80,12,30,0.92)', border: `1.5px solid ${INK.bad}`, boxShadow: `0 0 18px ${INK.bad}`, opacity: hot }}>{label}</div>
+      <LogTape x={x} y={y} cells={cells} cellW={cw} state={() => 'empty'} tick={1000} offsetOf={NO_OFFSET} />
+    </div>
   )
 }
 
-/** Partition lanes as moving conveyor belts; P3 appears as the 4-lane layout blends in (q: 0 → 1). */
-function Lanes({ t, q, n, enter, offsets = 0, hot = [] }: { t: number; q: number; n: number; enter?: number; offsets?: number; hot?: number[] }) {
-  const h = laneH(q)
+function Producer({ t, at }: { t: number; at: number }) {
+  return (
+    <Rise t={t} at={at}>
+      <ProducerBox x={PROD.x} y={PROD.y} w={PROD.w} title="producer" line="send(key, tin)" />
+    </Rise>
+  )
+}
+
+/** The partitioner: a glossy block with the formula. `f` cross-fades "% 3" into "% 4"; `bump` is a gentle pulse per message. */
+function Machine({ t, at, f = 0, bump = 0 }: { t: number; at: number; f?: number; bump?: number }) {
   return (
     <>
-      {Array.from({ length: n }, (_, i) => {
-        const p = i === 3 ? clamp(sp(t, -1) * q) : enter === undefined ? 1 : clamp(sp(t, enter + i * 0.22, 14, 110), 0, 1.1)
-        const y = laneY(i, q)
-        const isNew = i === 3
-        const isHot = hot.includes(i)
-        const border = isHot ? NEON.red : isNew ? NEON.green : '#2c3b5e'
-        const lane: CSSProperties = {
-          position: 'absolute',
-          left: LANE_X,
-          top: y - h / 2,
-          width: LANE_W,
-          height: h,
-          borderRadius: 22,
-          border: `3px ${isNew ? 'dashed' : 'solid'} ${border}`,
-          background: `repeating-linear-gradient(90deg, rgba(96,165,250,0.06) 0 40px, transparent 40px 80px), linear-gradient(180deg, #111a33, #0a1124)`,
-          backgroundPosition: `${t * 70}px 0, 0 0`,
-          boxShadow: isHot || isNew ? glow(border, 0.5) : 'inset 0 2px 0 rgba(255,255,255,0.05), 0 18px 30px rgba(0,0,0,0.45)',
-          opacity: clamp(p),
-          transform: `translateX(${(1 - clamp(p)) * 260}px)`,
-        }
-        return (
-          <div key={i}>
-            <div style={lane}>
-              {offsets > 0 &&
-                [0, 1, 2, 3, 4, 5].map((o) => (
-                  <span
-                    key={o}
-                    style={{
-                      position: 'absolute',
-                      left: slotX(o) - LANE_X - 14,
-                      top: h / 2 - 20,
-                      fontFamily: MONO,
-                      fontSize: 32,
-                      fontWeight: 700,
-                      color: '#7dd3fc',
-                      opacity: clamp(sp(t, offsets + i * 0.2 + o * 0.12)) * 0.8,
-                    }}
-                  >
-                    {o === 5 ? '…' : o}
-                  </span>
-                ))}
-            </div>
-            <div
-              style={{
-                position: 'absolute',
-                left: LANE_X - 112,
-                top: y - 34,
-                width: 88,
-                height: 68,
-                borderRadius: 16,
-                display: 'grid',
-                placeItems: 'center',
-                fontSize: 34,
-                fontWeight: 900,
-                color: isNew ? '#bbf7d0' : NEON.white,
-                background: '#161c2c',
-                border: `2px solid ${isNew ? NEON.green : '#334155'}`,
-                opacity: clamp(p),
-              }}
-            >
-              P{i}
-            </div>
+      <Rise t={t} at={at}>
+        <div style={{ position: 'absolute', left: MACH.cx - MACH.w / 2, top: MACH.cy - MACH.h / 2, width: MACH.w, height: MACH.h, boxSizing: 'border-box', borderRadius: 28, background: HERO, boxShadow: HERO_SHADOW, overflow: 'hidden', transform: `scale(${1 + 0.04 * bump})` }}>
+          <Sheen t={t} phase={1} />
+          <div style={{ position: 'absolute', left: 0, right: 0, top: 128, textAlign: 'center', fontSize: 26, fontWeight: 700, color: 'rgba(255,255,255,0.85)' }}>partitioner</div>
+          <div style={{ position: 'absolute', left: 0, right: 0, top: 168, textAlign: 'center', fontFamily: MONO, fontSize: 38, fontWeight: 800, color: '#ffffff', whiteSpace: 'nowrap' }}>
+            hash(key) %{' '}
+            <span style={{ display: 'inline-block', position: 'relative', width: '0.65em' }}>
+              <span style={{ opacity: 1 - f }}>3</span>
+              <span style={{ position: 'absolute', left: 0, top: 0, opacity: f }}>4</span>
+            </span>
           </div>
-        )
-      })}
-    </>
-  )
-}
-
-/** Consumers parked at the end of each lane, with data particles streaming into them. */
-function Consumers({ t, q, n, at, hot = [] }: { t: number; q: number; n: number; at: number; hot?: number[] }) {
-  return (
-    <>
-      {Array.from({ length: n }, (_, i) => {
-        const y = laneY(i, q)
-        const p = clamp(sp(t, at + i * 0.15))
-        const c = hot.includes(i) ? NEON.red : NEON.blue
-        return (
-          <div key={i} style={{ opacity: p }}>
-            {[0, 1, 2].map((k) => {
-              const x = LANE_X + LANE_W - 10 + (((t - at) * 120 + k * 45) % 130)
-              return <div key={k} style={{ position: 'absolute', left: x, top: y - 7, width: 14, height: 14, borderRadius: 7, background: NEON.cyan, boxShadow: glow(NEON.cyan, 0.5) }} />
-            })}
-            <div
-              style={{
-                position: 'absolute',
-                left: CONSUMER_X - 120,
-                top: y - 50,
-                width: 250,
-                height: 100,
-                borderRadius: 22,
-                border: `3px solid ${c}`,
-                background: 'linear-gradient(160deg,#2d313d,#171a22)',
-                boxShadow: glow(c, hot.includes(i) ? 1 : 0.5),
-                display: 'flex',
-                alignItems: 'center',
-                gap: 16,
-                padding: '0 22px',
-                transform: `translateX(${(1 - p) * 120}px)`,
-              }}
-            >
-              <GearIcon size={52} t={t} color={c} />
-              <div>
-                <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: 3, color: NEON.muted }}>CONSUMER</div>
-                <div style={{ fontSize: 38, fontWeight: 900 }}>C{i}</div>
-              </div>
-            </div>
-          </div>
-        )
-      })}
-    </>
-  )
-}
-
-function Producer({ t, at = -1 }: { t: number; at?: number }) {
-  return (
-    <At x={PRODUCER.x} y={PRODUCER.y}>
-      <Panel t={t} at={at} w={300} h={230} tone="blue">
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 34, gap: 14 }}>
-          <PlaneIcon size={96} />
-          <div style={{ fontSize: 26, fontWeight: 900, letterSpacing: 4 }}>PRODUCER</div>
         </div>
-      </Panel>
-    </At>
+      </Rise>
+      <Icon3D name="hash" x={MACH.cx} y={MACH.cy - 55} size={100} t={t} at={at + 0.15} />
+    </>
   )
 }
 
-function Machine({ t, mod, active, display, at = -1, flip = -1 }: { t: number; mod: number; active: boolean; display?: string; at?: number; flip?: number }) {
-  const bump = flip > 0 ? Math.sin(Math.PI * span(t, flip, flip + 0.5)) : 0
+/** Wires with flowing packets: producer → partitioner → every partition. */
+function Flows({ t, at, q, n }: { t: number; at: number; q: number; n: number }) {
+  const out = { x: MACH.cx + MACH.w / 2 + 4, y: MACH.cy }
   return (
     <>
-      <At x={MACHINE.x} y={MACHINE.y} style={{ transform: `translate(-50%, -50%) scale(${1 + 0.15 * bump})` }}>
-        <Panel t={t} at={at} w={340} h={250} tone={active ? 'cyan' : 'violet'} strong={active}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 30, gap: 10 }}>
-            <GearIcon size={70} t={active ? t * 3 : t * 0.4} color={active ? NEON.cyan : NEON.violet} />
-            <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: 4, color: NEON.muted }}>PARTITIONER</div>
-            <div style={{ fontFamily: MONO, fontSize: 44, fontWeight: 800, color: bump > 0.1 ? NEON.green : NEON.white }}>hash % {mod}</div>
+      <Wire from={{ x: PROD.x + PROD.w + 4, y: MACH.cy }} to={{ x: MACH.cx - MACH.w / 2 - 6, y: MACH.cy }} color={INK.line} p={move(t, at, 0.5)} flow={t} />
+      <Packets t={t} from={{ x: PROD.x + PROD.w + 4, y: MACH.cy }} to={{ x: MACH.cx - MACH.w / 2 - 6, y: MACH.cy }} start={at + 0.5} every={0.5} len={0.6} size={18} />
+      {Array.from({ length: n }, (_, i) => {
+        const to = { x: TX - 104, y: laneY(i, q) }
+        const k = i === 3 ? q : 1
+        return (
+          <div key={i} style={{ opacity: k }}>
+            <Wire from={out} to={to} color={INK.line} p={i === 3 ? 1 : move(t, at + 0.3 + i * 0.1, 0.5)} flow={t} />
+            <Packets t={t} from={out} to={to} start={at + 0.9 + i * 0.12} every={0.6} len={0.6} size={18} />
           </div>
-        </Panel>
-      </At>
-      <At x={MACHINE.x - 50} y={MACHINE.y - 262}>
-        {display && <Pill text={display} tone="cyan" size={34} style={{ fontFamily: MONO }} />}
-      </At>
+        )
+      })}
+    </>
+  )
+}
+
+/** Consumers parked after the lanes; `busy(i)` drives each progress bar. Non-hot ones dim once any lane is hot. */
+function Consumers({ t, q, n, at, hot = [], busy }: { t: number; q: number; n: number; at: number; hot?: number[]; busy: (i: number) => number }) {
+  return (
+    <>
+      {Array.from({ length: n }, (_, i) => {
+        const y = laneY(i, q)
+        const isHot = hot.includes(i)
+        const dim = hot.length > 0 && !isHot
+        const from = { x: LANE_END + 14, y }
+        const to = { x: CONS_X - 8, y }
+        return (
+          <div key={i} style={{ opacity: dim ? 0.4 : 1 }}>
+            <Wire from={from} to={to} color={isHot ? INK.bad : INK.line} p={move(t, at + i * 0.15 - 0.2, 0.4)} flow={t} />
+            <Packets t={t} from={from} to={to} start={at + 0.7 + i * 0.1} every={0.5} len={0.6} size={18} color={isHot ? INK.bad : undefined} />
+            <Rise t={t} at={at + i * 0.15}>
+              <ConsumerUnit x={CONS_X} y={y - 59} w={300} name={`C${i}`} parts={[`P${i}`]} t={t} busy={busy(i)} accent={isHot ? INK.bad : undefined} />
+            </Rise>
+          </div>
+        )
+      })}
     </>
   )
 }
 
 const formula = (m: Placed) => `hash(${m.key}) = ${HASH[m.key]} → ${HASH[m.key]} % ${m.mod} = ${m.p}`
 
-function lanes(t: number, c: Cue) {
-  const [a0, a1, a2] = [c.at(0), c.at(1), c.at(2)]
-  const cam = cameraAt(t, [
-    [0, { x: 1500, y: 560, s: 1.35, rx: 28, ry: -18 }],
-    [a0 + 0.6, { x: 1450, y: 560, s: 1.0, rx: 6, ry: -6 }, 2.2],
-    [a1, { x: 1380, y: 340, s: 1.35 }, 1.2],
-    [a1 + 1.4, { x: 1680, y: 340, s: 1.35 }, 2.2],
-    [a2, WIDE, 1.3],
-  ])
+/** Formula pills over the partitioner: each message's pill cross-fades into the next one's, never a hard swap. */
+function Formulas({ t, wave, until = Infinity }: { t: number; wave: Placed[]; until?: number }) {
   return (
-    <Scene t={t} camera={cam} overlay={<div style={{ opacity: vis(t, -1, a1) }}><TitleCard t={t} at={a0 + 0.2} kicker="PARTITION" title="Topic = nhiều làn đường" dock={a0 + 1.5} /></div>}>
-      <Lanes t={t} q={0} n={3} enter={a0 + 0.3} offsets={a1 + 0.3} />
-      <At x={1500} y={170}>
-        <Pill text="mỗi làn = 1 log riêng · offset từ 0" tone="sky" size={34} o={Math.min(sp(t, a1 + 0.5), vis(t, 0, a2))} />
-      </At>
-      <Producer t={t} at={a2 + 0.2} />
-      <At x={PRODUCER.x + 60} y={PRODUCER.y - 190 + Math.sin(t * 5) * 10} style={{ opacity: clamp(sp(t, a2 + 0.7)) }}>
-        <div style={{ width: 96, height: 72, borderRadius: 16, border: `3px solid ${NEON.white}`, background: '#334155', display: 'grid', placeItems: 'center', fontSize: 44, fontWeight: 900, boxShadow: glow(NEON.white, 0.4) }}>?</div>
-      </At>
-      <svg width={1200} height={1100} style={{ position: 'absolute', left: 0, top: 0, overflow: 'visible' }}>
-        {[0, 1, 2].map((p) => (
-          <path
-            key={p}
-            d={`M${PRODUCER.x + 160} ${PRODUCER.y} C 700 ${PRODUCER.y}, 820 ${laneY(p, 0)}, ${LANE_X - 130} ${laneY(p, 0)}`}
-            fill="none"
-            stroke="#64748b"
-            strokeWidth={5}
-            strokeDasharray="14 14"
-            strokeDashoffset={-t * 60}
-            opacity={vis(t, a2 + 1.1 + p * 0.2)}
-          />
-        ))}
-      </svg>
-    </Scene>
+    <>
+      {wave.map((m, i) => {
+        const next = wave[i + 1]
+        const o = span(t, m.start + 0.45, m.start + 0.8) * (1 - (next ? span(t, next.start + 0.45, next.start + 0.8) : 0)) * (Number.isFinite(until) ? 1 - span(t, until, until + 0.4) : 1)
+        return <GlowPill key={m.label} x={MACH.cx} y={MACH.cy - 262} text={formula(m)} o={o} color={KEY_LOOK[m.key].glow} size={30} mono />
+      })}
+    </>
   )
 }
 
-function hash(t: number, c: Cue) {
-  const [a0, a1, a2, a3] = [c.at(0), c.at(1), c.at(2), c.at(3)]
-  const wave = firstWave(c)
-  const inside = wave.find((m) => flight(m, t, 0).inMachine)
-  const A1 = wave[0]
-  const cam = cameraAt(t, [
-    [0, { ...WIDE, s: 0.8 }],
-    [a0 + 0.3, { x: 760, y: 560, s: 1.15, ry: 6 }, 1.4],
-    [A1.start + 0.2, { x: 760, y: 520, s: 1.45 }, 0.9],
-    [A1.start + 1.2, { x: 1250, y: 560, s: 1.2, ry: -6 }, 1.0],
-    [a2, WIDE, 1.2],
-    [a3 + 0.4, { x: 1420, y: 560, s: 1.25, rx: 8 }, 1.8],
-  ])
+const bumpOf = (t: number, wave: Placed[]) => wave.reduce((acc, m) => Math.max(acc, Math.sin(Math.PI * span(t, m.start + 0.45, m.start + 1.0))), 0)
+
+/* ------------------------------------------------------------------ 1. lanes */
+
+function lanes(t: number, c: Cue) {
+  const [a0, a1, a2] = [c.at(0), c.at(1), c.at(2)]
+  const LX = 730
+  const LW = 150
+  const top = (i: number) => 320 + i * 200
+  const yc = (i: number) => top(i) + 35
   return (
-    <Scene t={t} camera={cam} overlay={<div style={{ opacity: vis(t, -1, a1) }}><TitleCard t={t} at={a0} kicker="CHỌN LÀN" title="hash(key) % N" dock={a0 + 1.3} /></div>}>
-      <Lanes t={t} q={0} n={3} />
-      <Producer t={t} />
-      <Machine t={t} mod={3} active={!!inside} display={inside && formula(inside)} at={a0 + 0.4} />
-      <At x={MACHINE.x} y={MACHINE.y + 220}>
-        <Pill text="partition = hash(key) % 3" tone="violet" size={32} o={Math.min(sp(t, a0 + 1.4), vis(t, 0, a1))} style={{ fontFamily: MONO }} />
-      </At>
-      {wave.map((m) => (
-        <FlyingChip key={m.label} m={m} t={t} q={0} />
+    <SoftScene
+      t={t}
+      camera={cameraAt(t, [
+        [0, WIDE],
+        [a1, { x: 1000, y: 560, s: 1.1 }, 1.4],
+        [a2, WIDE, 1.3],
+      ])}
+      title={{ kicker: 'PARTITION', text: 'Topic = nhiều làn', until: a1 }}
+    >
+      <div style={{ position: 'absolute', left: 560, top: 262, width: 1100, height: 590, border: `2px dashed ${INK.line}`, borderRadius: 36, background: 'rgba(20,44,130,0.28)', opacity: vis(t, a0 + 1.0) }}>
+        <div style={{ position: 'absolute', left: 28, top: -26, padding: '6px 20px', borderRadius: 999, background: 'rgba(8,22,82,0.95)', border: '1.5px solid #6ea2ff', boxShadow: '0 0 16px rgba(77,141,255,0.6)', fontFamily: MONO, fontSize: 26, color: '#ffffff' }}>topic payments</div>
+      </div>
+      {[0, 1, 2].map((i) => (
+        <Rise key={i} t={t} at={a0 + 1.3 + i * 0.35}>
+          <Lane x={LX} y={top(i)} cw={LW} cells={6} label={`P${i}`} />
+        </Rise>
       ))}
-      {wave.map((m) => (
-        <At key={m.label} x={slotX(m.slot)} y={laneY(m.p, 0)}>
-          <Burst t={t} at={m.start + 1.75} tone={KEY_TONE[m.key]} r={60} />
-        </At>
-      ))}
-      <At x={1420} y={905}>
-        <Kinetic t={t} at={a3 + 2.6} text="A → luôn P1" size={84} color="#a5f3fc" glowColor={NEON.cyan} />
-      </At>
-    </Scene>
+      {[0, 1, 2].map((i) =>
+        [0, 1, 2, 3, 4, 5].map((o) => (
+          <div key={`${i}-${o}`} style={{ position: 'absolute', left: LX + o * LW, top: top(i), width: LW, height: 70, display: 'grid', placeItems: 'center', fontFamily: MONO, fontSize: 34, fontWeight: 800, color: '#cfe0ff', opacity: vis(t, a1 + 0.3 + i * 0.3 + o * 0.12, Infinity, 0.3) }}>
+            {o === 5 ? '…' : o}
+          </div>
+        )),
+      )}
+      {/* a soft light travels along every log: "ghi nối đuôi" */}
+      {[0, 1, 2].map((i) => {
+        const frac = (t * 0.3 + i * 0.33) % 1
+        return <div key={i} style={{ position: 'absolute', left: LX + frac * (6 * LW - LW), top: top(i), width: LW, height: 70, borderRadius: 14, background: 'radial-gradient(ellipse at center, rgba(180,210,255,0.5), transparent 70%)', opacity: Math.sin(Math.PI * frac) * vis(t, a1 + 2.0) }} />
+      })}
+      <div style={{ opacity: 1 - span(t, a2 - 0.2, a2 + 0.3) }}>
+        <Statement x={420} y={895} text="mỗi partition = 1 log riêng · offset đếm từ 0" color={INK.faint} size={42} o={sp(t, a1 + 1.9)} />
+      </div>
+      {/* beat 3: a message arrives and has to pick a lane */}
+      <Producer t={t} at={a2 + 0.1} />
+      <div style={{ position: 'absolute', left: 220, top: 380 + Math.sin(t * 2.4) * 8, width: 80, height: 80, borderRadius: 22, background: HERO, boxShadow: HERO_SHADOW, display: 'grid', placeItems: 'center', fontSize: 52, fontWeight: 800, color: '#ffffff', opacity: vis(t, a2 + 0.6) }}>?</div>
+      {[0, 1, 2].map((i) => {
+        const from = { x: PROD.x + PROD.w + 6, y: 540 }
+        const to = { x: LX - 106, y: yc(i) }
+        return (
+          <div key={i}>
+            <Wire from={from} to={to} color={INK.line} p={move(t, a2 + 0.8 + i * 0.15, 0.5)} flow={t} />
+            <Packets t={t} from={from} to={to} start={a2 + 1.4 + i * 0.12} every={0.5} len={0.7} size={18} />
+          </div>
+        )
+      })}
+    </SoftScene>
   )
 }
+
+/* ------------------------------------------------------------------ 2. hash(key) % N */
+
+function hash(t: number, c: Cue) {
+  const [a0, a1, a2, a3] = [c.at(0), c.at(1), c.at(2), c.at(3)]
+  const d2 = c.end(2) - a2
+  const wave = firstWave(c)
+  const keyRows: { key: string; at: number }[] = [
+    { key: 'A', at: a1 + 0.3 },
+    { key: 'B', at: a2 + 0.3 },
+    { key: 'C', at: a2 + d2 * 0.55 + 0.2 },
+  ]
+  return (
+    <SoftScene
+      t={t}
+      camera={cameraAt(t, [
+        [0, { x: 880, y: 540, s: 1.06 }],
+        [a1 + 0.2, { x: 880, y: 520, s: 1.12 }, 1.3],
+        [a2 + 0.2, { x: 880, y: 540, s: 1.06 }, 1.4],
+        [a3 + 0.3, { x: 900, y: 560, s: 1.1 }, 1.6],
+      ])}
+      title={{ kicker: 'CHỌN LÀN', text: 'hash(key) % N', until: a1 }}
+    >
+      <Producer t={t} at={a0 + 0.9} />
+      <Machine t={t} at={a0 + 1.3} bump={bumpOf(t, wave)} />
+      {[0, 1, 2].map((i) => (
+        <Rise key={i} t={t} at={a0 + 1.7 + i * 0.2}>
+          <Lane x={TX} y={laneTop(i, 0)} cw={CW} label={`P${i}`} />
+        </Rise>
+      ))}
+      <Flows t={t} at={a0 + 2.0} q={0} n={3} />
+      <GlowPill x={MACH.cx} y={MACH.cy + 190} text="partition = hash(key) % 3" o={Math.min(sp(t, a0 + 2.5), 1 - span(t, a1, a1 + 0.4))} color={INK.accent} size={28} mono />
+      {/* hash table of the keys, filled as each key is introduced */}
+      <Rise t={t} at={a1 + 0.1}>
+        <div style={{ ...SOFT_PANEL, left: 90, top: 690, width: 300, boxSizing: 'border-box', padding: '16px 24px' }}>
+          <div style={{ fontSize: 24, fontWeight: 700, color: INK.faint, height: 36 }}>hash của key</div>
+          {keyRows.map((r) => (
+            <div key={r.key} style={{ height: 64, display: 'flex', alignItems: 'center' }}>
+              <Rise t={t} at={r.at}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
+                  <div style={{ width: 64, height: 52, borderRadius: 12, background: KEY_LOOK[r.key].grad, display: 'grid', placeItems: 'center', fontSize: 30, fontWeight: 800, boxShadow: `0 0 14px ${KEY_LOOK[r.key].glow}` }}>{r.key}</div>
+                  <div style={{ fontFamily: MONO, fontSize: 32, fontWeight: 800 }}>→ {HASH[r.key]}</div>
+                </div>
+              </Rise>
+            </div>
+          ))}
+        </div>
+      </Rise>
+      <Formulas t={t} wave={wave} />
+      {wave.map((m) => (
+        <MsgChip key={m.label} m={m} t={t} q={0} />
+      ))}
+      {wave.map((m) => (
+        <Ring key={m.label} x={slotX(m.slot)} y={laneY(m.p, 0)} t={t} at={m.start + 1.75} color={KEY_LOOK[m.key].glow} />
+      ))}
+      <Statement x={1000} y={850} text="A luôn vào P1" color="#9cc4ff" size={64} o={sp(t, a3 + 2.0)} />
+    </SoftScene>
+  )
+}
+
+/* ------------------------------------------------------------------ 3. order inside a lane */
 
 function order(t: number, c: Cue) {
   const [a0, a1, a2] = [c.at(0), c.at(1), c.at(2)]
   const As = FIRST.filter((m) => m.key === 'A')
-  const y1 = laneY(1, 0)
-  const cam = cameraAt(t, [
-    [0, { x: 1330, y: 560, s: 1.6, ry: -14, rx: 6 }],
-    [a0 + 0.4, { x: 1330, y: 540, s: 1.45, ry: 4 }, 2.6],
-    [a1, { x: 1700, y: 560, s: 0.95, ry: -4 }, 1.5],
-    [a2, { x: 1250, y: 640, s: 0.78, r: -1.5 }, 1.4],
-  ])
+  const litA = span(t, a0 + 1.4, a0 + 1.75)
+  const topY = laneTop(1, 0)
   return (
-    <Scene t={t} camera={cam} overlay={<div style={{ opacity: vis(t, -1, a1) }}><TitleCard t={t} at={a0} kicker="THỨ TỰ" title="Chỉ có TRONG một làn" dock={a0 + 1.2} /></div>}>
-      <Lanes t={t} q={0} n={3} />
-      <Producer t={t} />
-      <Machine t={t} mod={3} active={false} />
-      {FIRST.map((m) => (
-        <Chip key={m.label} x={slotX(m.slot)} y={laneY(m.p, 0)} label={m.label} tone={t >= a0 + 0.6 && m.key === 'A' ? 'green' : undefined} glowOn={t >= a0 + 0.6 && m.key === 'A'} />
+    <SoftScene
+      t={t}
+      camera={cameraAt(t, [
+        [0, WIDE],
+        [a0 + 1.0, { x: 960, y: 540, s: 1.04 }, 1.8],
+        [a1, WIDE, 1.4],
+      ])}
+      title={{ kicker: 'THỨ TỰ', text: 'Chỉ có TRONG một làn', until: a1 }}
+    >
+      <Producer t={t} at={0.6} />
+      <Machine t={t} at={0.8} />
+      <Flows t={t} at={1.2} q={0} n={3} />
+      {[0, 1, 2].map((i) => (
+        <Rise key={i} t={t} at={0.6 + i * 0.2}>
+          <Lane x={TX} y={laneTop(i, 0)} cw={CW} label={`P${i}`} />
+        </Rise>
       ))}
-      <svg width={2400} height={1200} style={{ position: 'absolute', left: 0, top: 0, overflow: 'visible' }}>
+      {FIRST.map((m, k) => (
+        <Rise key={m.label} t={t} at={1.3 + k * 0.12}>
+          <Chip x={slotX(m.slot)} y={laneY(m.p, 0)} label={m.label} lit={m.key === 'A' ? litA : 0} />
+        </Rise>
+      ))}
+      <svg width={1920} height={1080} style={{ position: 'absolute', left: 0, top: 0, overflow: 'visible', pointerEvents: 'none' }}>
         {As.slice(1).map((m, i) => {
           const x1 = slotX(As[i].slot)
           const x2 = slotX(m.slot)
           return (
             <path
               key={m.label}
-              d={`M${x1} ${y1 - 40} Q ${(x1 + x2) / 2} ${y1 - 120}, ${x2} ${y1 - 42}`}
+              d={`M${x1} ${topY - 2} Q ${(x1 + x2) / 2} ${topY - 70}, ${x2} ${topY - 2}`}
               fill="none"
-              stroke={NEON.green}
+              stroke={INK.good}
               strokeWidth={7}
               strokeLinecap="round"
               pathLength={1}
               strokeDasharray="1 1"
-              strokeDashoffset={1 - move(t, a0 + 1.0 + i * 0.6, 0.5)}
-              style={{ filter: `drop-shadow(0 0 8px ${NEON.green})` }}
+              strokeDashoffset={1 - move(t, a0 + 1.7 + i * 0.6, 0.5)}
+              style={{ filter: `drop-shadow(0 0 8px ${INK.good})` }}
             />
           )
         })}
       </svg>
-      <At x={slotX(1)} y={y1 - 150}>
-        <Pill text="A1 → A2 → A3 ✓" tone="green" size={34} o={Math.min(sp(t, a0 + 2.2), vis(t, 0, a1))} />
-      </At>
-      <Consumers t={t} q={0} n={3} at={a1 + 0.3} />
-      <At x={1700} y={150}>
-        <Pill text="mỗi consumer đọc 1 làn · chạy song song" tone="sky" size={34} o={Math.min(sp(t, a1 + 1.0), vis(t, 0, a2))} />
-      </At>
-      <At x={760} y={980}>
-        <CodeWindow
-          t={t}
-          at={a2 + 0.6}
-          w={1000}
-          size={30}
-          lines={[
-            [['// key = thứ cần giữ thứ tự', '#6b7a99']],
-            [
-              ['producer', '#e2e8f0'],
-              ['.', '#94a3b8'],
-              ['send', '#60a5fa'],
-              ['("payments", ', '#e2e8f0'],
-              ['walletId', '#4ade80'],
-              [', event);', '#e2e8f0'],
-            ],
-          ]}
-        />
-      </At>
-      <At x={1580} y={950} style={{ display: 'flex', flexDirection: 'column', gap: 18, alignItems: 'flex-start' }}>
-        <Pill text="key = wallet_id ✓" tone="green" size={38} o={sp(t, a2 + 3.0)} />
-        <Pill text="key = order_id ✗" tone="red" size={38} o={sp(t, a2 + 3.6)} />
-      </At>
-    </Scene>
+      <GlowPill x={TX + (CELLS * CW) / 2} y={laneY(1, 0) + 85} text="A1 → A2 → A3 ✓" o={Math.min(sp(t, a0 + 2.8), 1 - span(t, a1, a1 + 0.4))} color={INK.good} size={32} />
+      <Consumers t={t} q={0} n={3} at={a1 + 0.3} busy={(i) => 0.5 + 0.5 * Math.sin(t * 2.2 + i * 1.7)} />
+      <GlowPill x={1500} y={190} text="mỗi consumer đọc 1 làn · chạy song song" o={Math.min(sp(t, a1 + 1.1), 1 - span(t, a2, a2 + 0.4))} size={30} />
+      {/* beat 3: no order between lanes, so the thing that needs order becomes the key */}
+      <div style={{ opacity: 1 - span(t, a2 + 2.5, a2 + 2.9) }}>
+        <Statement x={430} y={885} text="giữa các partition: không có thứ tự chung" color={INK.warn} size={44} o={sp(t, a2 + 0.2)} />
+      </div>
+      <Rise t={t} at={a2 + 2.8}>
+        <div style={{ ...SOFT_PANEL, left: 120, top: 880, fontFamily: MONO, fontSize: 32, fontWeight: 700, whiteSpace: 'pre' }}>
+          <span>producer.send(</span>
+          <span>"payments", </span>
+          <span style={{ color: INK.good }}>walletId</span>
+          <span>, event);</span>
+        </div>
+      </Rise>
+      <GlowPill x={1330} y={910} text="key = wallet_id ✓" o={sp(t, a2 + 3.8)} color={INK.good} size={32} />
+      <GlowPill x={1700} y={910} text="key = order_id ✗" o={sp(t, a2 + 4.5)} color={INK.bad} size={32} />
+    </SoftScene>
   )
 }
+
+/* ------------------------------------------------------------------ 4. adding a partition */
 
 function resize(t: number, c: Cue) {
   const [a0, a1, a2, a3] = [c.at(0), c.at(1), c.at(2), c.at(3)]
-  const q = move(t, a0 + 1.4, 1.2)
-  const flipAt = a0 + 1.8
+  const q = move(t, a0 + 2.0, 1.2)
+  const flipAt = a0 + 2.6
+  const f = span(t, flipAt, flipAt + 0.4)
   const wave = secondWave(c)
-  const inside = wave.find((m) => flight(m, t, 1).inMachine)
-  const warn = t >= a3 + 0.2
   const A3 = FIRST.find((m) => m.label === 'A3')!
   const A4 = wave[0]
   const linkAt = A4.start + 1.9
+  const warn = span(t, a3 + 0.2, a3 + 0.55)
   const raceA = a3 + 1.6
-  const race = (speed: number) => clamp(((t - raceA) * speed) / 2.2)
-  const cam = cameraAt(t, [
-    [0, WIDE],
-    [a0 + 0.9, { x: 760, y: 540, s: 1.45, ry: 8 }, 0.9],
-    [a0 + 2.6, { ...WIDE, y: 540 }, 1.2],
-    [A4.start + 1.0, { x: 1300, y: 620, s: 1.05, rx: 6 }, 1.0],
-    [a2, WIDE, 1.2],
-    [a3, { x: 1720, y: 560, s: 0.92, ry: -6 }, 1.4],
-  ])
+  const prog3 = span(t, raceA + 0.9, raceA + 4.5)
+  const prog4 = span(t, raceA + 0.9, raceA + 2.3)
+  const c1y = laneY(1, 1)
+  const c3y = laneY(3, 1)
+  const linkFrom = { x: slotX(A3.slot), y: c1y + 35 }
+  const linkTo = { x: slotX(A4.slot) + 38, y: c3y }
+  const flyChip = (label: string, start: number, y: number, o = 1) => {
+    const p = move(t, start, 0.9)
+    return <Chip x={lerp(LANE_END - 36, CONS_X + 250, p)} y={y} label={label} o={span(t, start, start + 0.2) * o} />
+  }
   return (
-    <Scene
+    <SoftScene
       t={t}
-      camera={cam}
-      overlay={
-        <>
-          <div style={{ opacity: vis(t, -1, a1) }}>
-            <TitleCard t={t} at={a0} kicker="THÊM PARTITION" title="Key đổi nhà" tone="red" dock={a0 + 1.1} />
-          </div>
-          <At x={960} y={960}>
-            <Stamp t={t} at={raceA + 1.6} text="SAI THỨ TỰ" size={84} />
-          </At>
-        </>
-      }
+      camera={cameraAt(t, [
+        [0, WIDE],
+        [a0 + 1.6, { x: 880, y: 540, s: 1.06 }, 1.4],
+        [a1 + 0.2, { x: 900, y: 580, s: 1.1 }, 1.3],
+        [a2, { x: 880, y: 560, s: 1.04 }, 1.3],
+        [a3 + 0.3, { x: 960, y: 560, s: 1.03 }, 1.5],
+      ])}
+      title={{ kicker: 'THÊM PARTITION', text: 'Key đổi nhà', until: a1 }}
     >
-      <Lanes t={t} q={q} n={4} hot={warn ? [1, 3] : []} />
-      <Producer t={t} />
-      <Machine t={t} mod={q > 0.5 ? 4 : 3} active={!!inside} display={inside && formula(inside)} flip={flipAt} />
-      {FIRST.map((m) => (
-        <Chip key={m.label} x={slotX(m.slot)} y={laneY(m.p, q)} label={m.label} tone={warn && m.label === 'A3' ? 'red' : undefined} glowOn={warn && m.label === 'A3'} />
+      <Producer t={t} at={0.9} />
+      <Machine t={t} at={1.2} f={f} bump={Math.max(bumpOf(t, wave), Math.sin(Math.PI * span(t, flipAt, flipAt + 0.6)))} />
+      {[0, 1, 2].map((i) => (
+        <Rise key={i} t={t} at={1.5 + i * 0.2}>
+          <Lane x={TX} y={laneTop(i, q)} cw={CW} label={`P${i}`} hot={i === 1 ? warn : 0} />
+        </Rise>
       ))}
-      {wave.map((m) => {
-        const red = warn && m.label === 'A4'
-        return <FlyingChip key={m.label} m={m} t={t} q={1} tone={red ? 'red' : undefined} glowOn={flight(m, t, 1).flying || red} />
-      })}
-      <svg width={2400} height={1200} style={{ position: 'absolute', left: 0, top: 0, overflow: 'visible' }}>
+      <Lane x={TX} y={laneTop(3, q)} cw={CW} label="P3" fresh o={q} hot={warn} />
+      <Flows t={t} at={1.9} q={q} n={4} />
+      {FIRST.map((m, k) => (
+        <Rise key={m.label} t={t} at={2.0 + k * 0.1}>
+          <Chip x={slotX(m.slot)} y={laneY(m.p, q)} label={m.label} red={m.label === 'A3' ? warn : 0} lit={m.label === 'A3' ? warn : 0} />
+        </Rise>
+      ))}
+      <Formulas t={t} wave={wave} until={a3} />
+      {wave.map((m) => (
+        <MsgChip key={m.label} m={m} t={t} q={1} red={m.label === 'A4' ? warn : 0} lit={m.label === 'A4' ? warn : 0} />
+      ))}
+      {wave.map((m) => (
+        <Ring key={m.label} x={slotX(m.slot)} y={laneY(m.p, 1)} t={t} at={m.start + 1.75} color={KEY_LOOK[m.key].glow} />
+      ))}
+      <svg width={1920} height={1080} style={{ position: 'absolute', left: 0, top: 0, overflow: 'visible', pointerEvents: 'none' }}>
         <path
-          d={`M${slotX(A3.slot)} ${laneY(1, 1) + 40} C ${slotX(A3.slot) + 60} ${laneY(2, 1) + 40}, ${slotX(0) + 80} ${laneY(3, 1) - 90}, ${slotX(0) + 10} ${laneY(3, 1) - 40}`}
+          d={`M${linkFrom.x} ${linkFrom.y} C ${linkFrom.x + 140} ${linkFrom.y + 55}, ${linkFrom.x + 140} ${linkTo.y - 40}, ${linkTo.x} ${linkTo.y}`}
           fill="none"
-          stroke={NEON.red}
+          stroke={INK.bad}
           strokeWidth={6}
-          strokeDasharray="16 12"
-          strokeDashoffset={-t * 40}
-          opacity={vis(t, linkAt)}
-          style={{ filter: `drop-shadow(0 0 8px ${NEON.red})` }}
+          strokeLinecap="round"
+          pathLength={1}
+          strokeDasharray="0.035 0.03"
+          strokeDashoffset={-t * 0.4}
+          opacity={move(t, linkAt, 0.5)}
+          style={{ filter: `drop-shadow(0 0 8px ${INK.bad})` }}
         />
       </svg>
-      <At x={520} y={MACHINE.y + 330}>
-        <Pill text="7 % 3 = 1   →   7 % 4 = 3" tone="amber" size={36} o={Math.min(sp(t, a1 + 0.4), vis(t, 0, a3))} style={{ fontFamily: MONO }} />
-      </At>
-      <Consumers t={t} q={q} n={4} at={a3 + 0.3} hot={warn ? [1, 3] : []} />
-      {[
-        { lane: 1, label: 'A3', speed: 0.45 },
-        { lane: 3, label: 'A4', speed: 1.2 },
-      ].map(({ lane, label, speed }) => (
-        <div key={label} style={{ position: 'absolute', left: CONSUMER_X + 160, top: laneY(lane, 1) - 34, width: 280, opacity: vis(t, raceA) }}>
-          <div style={{ fontSize: 30, fontWeight: 800, color: NEON.white, marginBottom: 8 }}>
-            xử lý {label} {race(speed) >= 1 ? '✓ xong' : '…'}
-          </div>
-          <div style={{ height: 20, borderRadius: 10, background: '#1e2433', overflow: 'hidden' }}>
-            <div style={{ width: `${race(speed) * 100}%`, height: '100%', background: race(speed) >= 1 ? NEON.green : NEON.amber }} />
-          </div>
-        </div>
-      ))}
-    </Scene>
+      <GlowPill x={MACH.cx} y={MACH.cy + 190} text="7 % 3 = 1   →   7 % 4 = 3" o={Math.min(sp(t, a1 + 0.4), 1 - span(t, a3, a3 + 0.4))} color={INK.warn} size={32} mono />
+      <Consumers t={t} q={1} n={4} at={a3 + 0.3} hot={[1, 3]} busy={(i) => (i === 1 ? prog3 : i === 3 ? prog4 : 0.5 + 0.5 * Math.sin(t * 2.2 + i * 1.7))} />
+      {flyChip('A3', raceA, c1y, 1 - span(t, raceA + 4.5, raceA + 4.8))}
+      {flyChip('A4', raceA, c3y, 1 - span(t, raceA + 2.3, raceA + 2.6))}
+      <Icon3D name="tick" x={CONS_X + 205} y={c3y} size={70} t={t} at={raceA + 2.3} />
+      <Icon3D name="tick" x={CONS_X + 205} y={c1y} size={70} t={t} at={raceA + 4.5} />
+      <Icon3D name="thumb-down" x={440} y={915} size={110} t={t} at={raceA + 2.4} />
+      <Statement x={540} y={880} text="SAI THỨ TỰ: A4 xong trước A3" color={INK.bad} size={56} o={sp(t, raceA + 2.5)} />
+    </SoftScene>
   )
 }
 
+/* ------------------------------------------------------------------ 5. summary */
+
 function summary(t: number, c: Cue) {
   return (
-    <SummaryGrid
-      t={t}
-      cue={c}
-      cards={[
-        { title: 'Cùng key → cùng partition', body: 'vì hash(key) không đổi', tone: 'cyan' },
-        { title: 'Thứ tự chỉ trong 1 partition', body: 'mỗi partition là 1 log riêng', tone: 'green' },
-        { title: 'Key = thứ cần giữ thứ tự', body: 'wallet_id, user_id…', tone: 'amber' },
-        { title: 'Thêm partition → key đổi nhà', body: 'vì % N đổi · làm lúc thấp điểm', tone: 'red' },
-      ]}
-    />
+    <SoftTheme>
+      <SummaryList t={t} cue={c} items={['Cùng key → cùng partition', 'Thứ tự chỉ trong 1 partition', 'Key = thứ cần giữ thứ tự', 'Thêm partition → key đổi nhà']} />
+    </SoftTheme>
   )
 }
 
 const RENDERS: Record<string, LessonScene['render']> = { lanes, hash, order, resize, summary }
 
+/** Key-moment sounds, timed to the same cue offsets the scenes animate on. */
+const SFX: Record<string, SceneSfx[]> = {
+  hash: [{ kind: 'ding', at: (c) => firstWave(c)[0].start + 1.75 }],
+  order: [{ kind: 'ding', at: (c) => c.at(0) + 2.8 }],
+  resize: [
+    { kind: 'tick', at: (c) => c.at(0) + 2.6 },
+    { kind: 'error', at: (c) => c.at(3) + 1.6 + 2.4 },
+  ],
+}
+
 const q = (prompt: string, options: string[], answer: number, explain: string) => ({ kind: 'choice' as const, prompt, options, answer, explain })
 
 export const keyPartitionLesson: Lesson = {
   ...keyPartitionScript,
-  scenes: keyPartitionScript.scenes.map((s) => ({ ...s, render: RENDERS[s.id] })),
+  scenes: keyPartitionScript.scenes.map((s) => ({ ...s, render: RENDERS[s.id], sfx: SFX[s.id] })),
   roadmap: [
     'Chặng 1: Partition là gì — vì sao một topic phải chia làn.',
     'Chặng 2: Key chọn làn bằng hash(key) % N, và thứ tự chỉ có trong một làn.',

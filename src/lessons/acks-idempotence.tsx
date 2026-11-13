@@ -1,426 +1,526 @@
-import {
-  At,
-  Burst,
-  DataCard,
-  Stream,
-  type LogBlock,
-  Kinetic,
-  MsgChip,
-  NEON,
-  NeonCard,
-  Pill,
-  Scene,
-  SummaryGrid,
-  TitleCard,
-  cameraAt,
-  clamp,
-  glow,
-  lerp,
-  move,
-  sp,
-  span,
-  vis,
-  type Neon,
-} from '../player/motion-kit'
-import type { Cue, Lesson, Scene as LessonScene } from '../player/types'
-import { INK, LogTape, Note, ServerUnit, Wire, type CellState } from '../player/schematic'
+import { cameraAt, clamp, lerp, move, sp, span, vis } from '../player/motion-kit'
+import { HERO, Icon3D, LogTape, Packets, Envelope, ProducerBox, Rise, SOFT, SOFT_PANEL, ServerUnit, SoftScene, SoftTheme, SummaryList, Note, Wire, type CellState } from '../player/schematic'
+import type { Cue, Lesson, Scene as LessonScene, SceneSfx } from '../player/types'
 import { MONO } from '../remotion/video-fonts'
 import { acksIdempotenceScript } from './acks-idempotence-script'
 
-/** A chip travelling from a to b during [at, at+len], with a small arc. */
-function Flying({ t, at, len = 0.7, from, to, label, tone = 'sky', stopAt }: { t: number; at: number; len?: number; from: { x: number; y: number }; to: { x: number; y: number }; label: string; tone?: Neon; stopAt?: number }) {
-  if (t < at) return null
-  const raw = move(t, at, len)
-  const p = stopAt === undefined ? raw : Math.min(raw, stopAt)
-  if (raw >= 1 && stopAt === undefined) return null
-  return <MsgChip x={lerp(from.x, to.x, p)} y={lerp(from.y, to.y, p) - Math.sin(Math.PI * p) * 60} label={label} tone={tone} />
+/** This lesson is drawn in the navy glow style. */
+const INK = SOFT
+const panel = SOFT_PANEL
+const WIDE = { x: 960, y: 540, s: 1 }
+const BAD_GRADIENT = 'linear-gradient(160deg, #ff8a96 0%, #ff5a6a 50%, #c02a3c 100%)'
+
+/** Wrapper that only sets opacity, so two states can cross-fade instead of swapping. */
+function O({ o, children }: { o: number; children: React.ReactNode }) {
+  const q = clamp(o)
+  if (q <= 0) return null
+  return <div style={{ opacity: q }}>{children}</div>
+}
+
+/** Glowing label pill centred on (x, y); fades and rises in with `o`. */
+function Pill({ x, y, text, color = INK.accent, o = 1, size = 28 }: { x: number; y: number; text: string; color?: string; o?: number; size?: number }) {
+  const q = clamp(o)
+  if (q <= 0) return null
+  return (
+    <div style={{ position: 'absolute', left: x, top: y, transform: `translate(-50%, -50%) translateY(${(1 - q) * 14}px)`, opacity: q, padding: '10px 26px', borderRadius: 999, background: 'rgba(8,22,82,0.92)', border: `1.5px solid ${color}`, boxShadow: `0 0 18px ${color}aa, inset 0 1px 0 rgba(255,255,255,0.15)`, fontSize: size, fontWeight: 800, color: '#ffffff', whiteSpace: 'nowrap' }}>
+      {text}
+    </div>
+  )
+}
+
+/** Big centred statement; words blur-rise one after another as `o` goes 0 → 1. */
+function Say({ y, text, color = INK.text, size = 52, o = 1, x = 960 }: { y: number; text: string; color?: string; size?: number; o?: number; x?: number }) {
+  const q = clamp(o)
+  if (q <= 0) return null
+  const words = text.split(' ')
+  return (
+    <div style={{ position: 'absolute', left: x - 900, width: 1800, top: y, display: 'flex', justifyContent: 'center', fontSize: size, fontWeight: 800, letterSpacing: -0.5, color, whiteSpace: 'nowrap', textShadow: `0 0 30px ${color}66` }}>
+      {words.map((w, k) => {
+        const p = clamp(q * (1 + words.length * 0.12) - k * 0.12)
+        return (
+          <span key={k} style={{ display: 'inline-block', marginRight: size * 0.26, opacity: p, filter: p < 0.98 ? `blur(${(1 - p) * 8}px)` : undefined, transform: `translateY(${(1 - p) * 24}px)` }}>
+            {w}
+          </span>
+        )
+      })}
+    </div>
+  )
+}
+
+/** One message / batch cell in the HERO blue; `tint` (0..1) cross-fades it to the tint colour. */
+function Block({ x, y, w = 200, h = 70, label, k = 1, tint = 0, tintGradient = BAD_GRADIENT, size = 32, mono = false }: { x: number; y: number; w?: number; h?: number; label: string; k?: number; tint?: number; tintGradient?: string; size?: number; mono?: boolean }) {
+  if (k <= 0) return null
+  const q = clamp(k)
+  return (
+    <div style={{ position: 'absolute', left: x, top: y, width: w, height: h, borderRadius: 16, overflow: 'hidden', opacity: clamp(q * 1.6), transform: `translateY(${(1 - k) * 16}px) scale(${0.9 + 0.1 * k})`, boxShadow: '0 0 20px rgba(77,141,255,0.5), 0 10px 20px rgba(0,8,50,0.45), inset 0 2px 0 rgba(255,255,255,0.5)' }}>
+      <div style={{ position: 'absolute', inset: 0, background: HERO }} />
+      <div style={{ position: 'absolute', inset: 0, background: tintGradient, opacity: clamp(tint) }} />
+      <div style={{ position: 'relative', height: '100%', display: 'grid', placeItems: 'center', fontSize: size, fontWeight: 800, color: '#ffffff', fontFamily: mono ? MONO : undefined, whiteSpace: 'nowrap' }}>{label}</div>
+    </div>
+  )
+}
+
+/** Dashed red slots drawn over empty tape cells: data that never arrived. */
+function MissingCells({ x, y, cw, from, to, o }: { x: number; y: number; cw: number; from: number; to: number; o: number }) {
+  if (o <= 0) return null
+  return (
+    <div style={{ opacity: clamp(o) }}>
+      {Array.from({ length: to - from }, (_, j) => (
+        <div key={j} style={{ position: 'absolute', left: x + (from + j) * cw + 3, top: y, width: cw - 6, height: 70, boxSizing: 'border-box', borderRadius: 14, border: `2px dashed ${INK.bad}`, background: 'rgba(255,90,106,0.12)' }} />
+      ))}
+    </div>
+  )
 }
 
 /* ------------------------------------------------------------------ 0. cold open */
 
-const ROW = { p: { x: 370, y: 560 }, l: { x: 960, y: 560 }, f: { x: 1550, y: 560 } }
-const blocks = (n: number, tone?: Neon) => Array.from({ length: n }, () => ({ tone }))
+/** Producer → leader → follower layout shared by the hook. */
+const HK = { P: { x: 90, y: 425 }, L: { x: 640, y: 410 }, F: { x: 1320, y: 410 }, CW: 50, TY: 640 }
 
 function hook(t: number, c: Cue) {
   const [a0, a1, a2] = [c.at(0), c.at(1), c.at(2)]
-  const { p: P, l: L, f: F } = ROW
-  const sent = Math.round(100 * span(t, a0 + 0.3, a0 + 2.3))
-  const acked = t >= a0 + 2.4
-  const dead = t >= a1 + 0.4
-  const promoted = t >= a1 + 2.2
-  const cam = cameraAt(t, [
-    [0, { x: 960, y: 540, s: 1.08, rx: 12 }],
-    [a0 + 0.4, { x: 960, y: 560, s: 0.95 }, 1.8],
-    [a1 + 0.2, { x: 1080, y: 560, s: 0.97, ry: -4 }, 1.1],
-    [a2 + 0.2, { x: 960, y: 560, s: 0.93 }, 1.2],
-  ])
+  const { P, L, F, CW, TY } = HK
+  const sentStep = Math.floor(span(t, a0 + 0.2, a0 + 1.8) * 12) / 12
+  const sent = Math.round(100 * sentStep)
+  const cells = Math.floor(span(t, a0 + 0.3, a0 + 1.9) * 10)
+  const dead = span(t, a1 + 0.8, a1 + 1.2)
+  const prom = span(t, a1 + 2.2, a1 + 2.6)
+  const miss = span(t, a1 + 3.0, a1 + 3.4)
+  const pulse = miss * (0.8 + 0.2 * Math.sin((t - a1) * 5))
+  const liveTape = (i: number): CellState => (i < cells ? 'new' : 'empty')
+  const deadTape = (i: number): CellState => (i < 10 ? 'dead' : 'empty')
+  const emptyTape = (): CellState => 'empty'
+  const yc = L.y + 65
   return (
-    <Scene
+    <SoftScene
       t={t}
-      camera={cam}
-      overlay={
-        <At x={960} y={985} style={{ opacity: vis(t, a2 + 0.6), padding: '12px 40px', borderRadius: 24, background: 'rgba(5,7,15,0.9)' }}>
-          <Kinetic t={t} at={a2 + 0.6} text="đã OK rồi… mà vẫn mất?" size={84} color="#fde68a" glowColor={NEON.amber} />
-        </At>
-      }
+      camera={cameraAt(t, [
+        [0, { x: 960, y: 560, s: 1.0 }],
+        [a1, { x: 980, y: 570, s: 1.04 }, 1.3],
+        [a2, { x: 1000, y: 590, s: 1.04 }, 1.3],
+      ])}
     >
-      <DataCard x={P.x} y={P.y} t={t} header="app · producer" value={String(sent)} unit="tin" role="producer" footer={acked ? 'đã nhận OK ✓' : 'đang gửi…'} o={sp(t, 0.1)} />
-      <DataCard x={L.x} y={L.y} t={t} header="broker-1 · payments-0" value={String(sent)} unit="tin" role={dead ? 'offline' : 'leader'} blocks={blocks(Math.round(sent / 10))} footer={dead ? 'broker đã chết' : 'ghi xong → trả OK'} o={sp(t, 0.3)} />
-      <DataCard x={F.x} y={F.y} t={t} header="broker-2 · payments-0" value="0" unit="tin" role={promoted ? 'new-leader' : 'follower'} meter={promoted ? undefined : 0.04 * span(t, a0 + 1, a1)} meterLabel="đang chép từ leader" footer={promoted ? '100 tin đã OK → mất' : undefined} o={sp(t, 0.5)} />
-      <Stream t={t} from={{ x: P.x + 230, y: P.y }} to={{ x: L.x - 230, y: L.y }} start={a0 + 0.3} end={a0 + 2.2} every={0.12} />
-      <Stream t={t} from={{ x: L.x - 230, y: L.y + 120 }} to={{ x: P.x + 230, y: P.y + 120 }} start={a0 + 0.8} end={a0 + 2.6} every={0.2} tone="green" arc={-40} />
-      <At x={F.x} y={F.y}>
-        <Burst t={t} at={a1 + 2.2} tone="amber" r={260} />
-      </At>
-      <At x={L.x} y={L.y}>
-        <Burst t={t} at={a1 + 0.4} tone="red" r={260} />
-      </At>
-    </Scene>
+      <Rise t={t} at={0.2}>
+        <ProducerBox x={P.x} y={P.y} w={340} title="producer · acks" line={`gửi ${sent} tin`} />
+      </Rise>
+      <Rise t={t} at={0.4}>
+        <O o={1 - dead}>
+          <ServerUnit x={L.x} y={L.y} name="broker-1 · leader" t={t} />
+          <LogTape x={L.x} y={TY} cells={10} cellW={CW} state={liveTape} offsetOf={(i) => i * 10} />
+        </O>
+        <O o={dead}>
+          <ServerUnit x={L.x} y={L.y} name="broker-1 ✕" down t={t} />
+          <LogTape x={L.x} y={TY} cells={10} cellW={CW} state={deadTape} offsetOf={(i) => i * 10} />
+        </O>
+      </Rise>
+      <Rise t={t} at={0.6}>
+        <O o={1 - prom}>
+          <ServerUnit x={F.x} y={F.y} name="broker-2 · follower" t={t} />
+        </O>
+        <O o={prom}>
+          <ServerUnit x={F.x} y={F.y} name="broker-2 · leader mới" accent={INK.warn} t={t} />
+        </O>
+        <LogTape x={F.x} y={TY} cells={10} cellW={CW} state={emptyTape} offsetOf={(i) => i * 10} />
+        <MissingCells x={F.x} y={TY} cw={CW} from={0} to={10} o={pulse} />
+      </Rise>
+      <Wire from={{ x: P.x + 340 + 10, y: yc }} to={{ x: L.x - 10, y: yc }} color={INK.line} p={move(t, a0, 0.5)} flow={t} />
+      <Wire from={{ x: L.x + 270, y: yc }} to={{ x: F.x - 10, y: yc }} color={INK.line} p={move(t, a0 + 0.2, 0.6)} dashed />
+      <Packets t={t} from={{ x: P.x + 350, y: yc }} to={{ x: L.x - 10, y: yc }} start={a0 + 0.2} end={a0 + 1.8} every={0.14} len={0.6} size={20} />
+      <Envelope t={t} at={a0 + 1.9} from={{ x: L.x - 10, y: yc }} to={{ x: P.x + 350, y: yc }} label="OK" color={INK.good} len={0.8} arc={-60} />
+      <div style={{ opacity: vis(t, a0 + 2.7) }}>
+        <Icon3D name="thumb-up" x={P.x + 170} y={P.y - 90} size={120} t={t} at={a0 + 2.7} />
+      </div>
+      <Icon3D name="fire" x={L.x + 130} y={L.y - 80} size={120} t={t} at={a1 + 0.9} />
+      <Say y={830} text="OK rồi… mà tin đi đâu?" color={INK.warn} size={64} o={sp(t, a2 + 0.2)} />
+      <Rise t={t} at={a2 + 2.4}>
+        <div style={{ ...panel, left: 760, top: 940, fontFamily: MONO, borderColor: INK.accent }}>acks = ?</div>
+      </Rise>
+      <Icon3D name="setting" x={700} y={975} size={110} t={t} at={a2 + 2.5} />
+    </SoftScene>
   )
 }
 
 /* ------------------------------------------------------------------ 1. three levels */
 
-/**
- * Producer → Leader → Follower chain with a message looping along it; the "OK" lights up at the node the
- * producer waits for (0 = producer itself, 1 = leader, 2 = follower).
- */
-function WaitChain({ t, at, wait, tone }: { t: number; at: number; wait: 0 | 1 | 2; tone: Neon }) {
-  const nodes = ['P', 'L', 'F']
-  const NX = (i: number) => 40 + i * 160
-  const phase = t < at + 0.4 ? -1 : ((t - at - 0.4) % 2.2) / 1.6
-  const pos = clamp(phase) * 2
-  const okOn = phase >= 0 && pos >= wait && phase < 1.3
+const LV = { cols: [560, 1000, 1440], laneY: [560, 720, 880], laneX: 110, laneW: 1700, laneH: 130, T: 3.4 }
+
+function levels(t: number, c: Cue) {
+  const [a1, a2, a3] = [c.at(1), c.at(2), c.at(3)]
+  const { cols, laneY, laneX, laneW, laneH, T } = LV
+  const lanes = [
+    { label: 'acks = 0', sub: 'không chờ', wait: 0, start: a1, color: INK.bad, arrive: 0.1 },
+    { label: 'acks = 1', sub: 'chờ leader', wait: 1, start: a2, color: INK.warn, arrive: 0.9 },
+    { label: 'acks = all', sub: 'chờ cả ISR', wait: 2, start: a3, color: INK.good, arrive: 1.8 },
+  ]
+  const nextStart = [a2, a3, Infinity]
+  const cycles = Array.from({ length: 6 }, (_, k) => k)
   return (
-    <div style={{ position: 'relative', height: 120, marginTop: 30 }}>
-      <div style={{ position: 'absolute', left: NX(0) + 35, width: 320, top: 33, height: 6, borderRadius: 3, background: '#334155' }} />
-      {nodes.map((n, i) => {
-        const lit = i <= wait && phase >= 0 && pos >= i
+    <SoftScene
+      t={t}
+      camera={cameraAt(t, [
+        [0, { x: 960, y: 540, s: 1.0 }],
+        [a1, { x: 960, y: 555, s: 1.03 }, 1.3],
+        [a2, { x: 960, y: 560, s: 1.03 }, 1.3],
+        [a3, { x: 960, y: 570, s: 1.04 }, 1.3],
+        [a3 + 4.2, WIDE, 1.2],
+      ])}
+      title={{ kicker: 'ACKS', text: 'Thế nào là gửi xong?' }}
+    >
+      <Rise t={t} at={1.9}>
+        <ProducerBox x={cols[0] - 150} y={255} w={300} title="producer" line="gửi tin" />
+      </Rise>
+      <Rise t={t} at={2.3}>
+        <ServerUnit x={cols[1] - 130} y={240} name="leader" t={t} />
+      </Rise>
+      <Rise t={t} at={2.7}>
+        <ServerUnit x={cols[2] - 130} y={240} name="follower (ISR)" t={t} />
+      </Rise>
+      {lanes.map((ln, i) => {
+        const cy = laneY[i]
+        const dim = lerp(1, 0.6, span(t, nextStart[i], nextStart[i] + 0.4))
         return (
-          <div key={n} style={{ position: 'absolute', left: NX(i), top: 0, width: 72, height: 72, borderRadius: 36, display: 'grid', placeItems: 'center', fontSize: 30, fontWeight: 900, background: '#151922', border: `4px solid ${lit ? NEON[tone] : '#475569'}`, color: lit ? '#fff' : '#94a3b8', boxShadow: lit ? glow(NEON[tone], 0.6) : undefined }}>
-            {n}
+          <div key={ln.label} style={{ opacity: dim }}>
+            <Rise t={t} at={ln.start}>
+              <div style={{ ...INK.card, position: 'absolute', left: laneX, top: cy - laneH / 2, width: laneW, height: laneH, boxSizing: 'border-box' }} />
+              <div style={{ position: 'absolute', left: laneX + 40, top: cy - 44, fontSize: 46, fontWeight: 800, letterSpacing: -0.5, color: '#ffffff', whiteSpace: 'nowrap' }}>{ln.label}</div>
+              <div style={{ position: 'absolute', left: laneX + 40, top: cy + 10, fontSize: 28, fontWeight: 700, color: ln.color }}>{ln.sub}</div>
+              <Wire from={{ x: cols[0] + 30, y: cy }} to={{ x: cols[1] - 30, y: cy }} color={INK.line} p={move(t, ln.start + 0.2, 0.5)} />
+              <Wire from={{ x: cols[1] + 30, y: cy }} to={{ x: cols[2] - 30, y: cy }} color={INK.line} p={move(t, ln.start + 0.35, 0.5)} />
+              {cols.map((cx) => (
+                <div key={cx} style={{ position: 'absolute', left: cx - 20, top: cy - 20, width: 40, height: 40, borderRadius: 20, background: HERO, boxShadow: '0 0 16px rgba(77,141,255,0.7), inset 0 2px 0 rgba(255,255,255,0.5)' }} />
+              ))}
+            </Rise>
+            {cycles.map((k) => {
+              const s = ln.start + 0.6 + k * T
+              if (t < s || t > s + T) return null
+              const out = 1 - span(t, s + T - 0.5, s + T - 0.15)
+              return (
+                <div key={k}>
+                  <Packets t={t} from={{ x: cols[0], y: cy }} to={{ x: cols[1], y: cy }} start={s} end={s} len={0.9} size={26} />
+                  {ln.wait === 2 && <Packets t={t} from={{ x: cols[1], y: cy }} to={{ x: cols[2], y: cy }} start={s + 0.9} end={s + 0.9} len={0.9} size={26} />}
+                  <div style={{ opacity: out }}>
+                    <Icon3D name="tick" x={cols[ln.wait]} y={cy} size={92} t={t} at={s + ln.arrive} float={false} />
+                  </div>
+                </div>
+              )
+            })}
           </div>
         )
       })}
-      {phase >= 0 && phase < 1 && <MsgChip x={NX(0) + 36 + pos * 160} y={36} />}
-      <div style={{ position: 'absolute', left: NX(wait) - 4, top: 84, width: 80, textAlign: 'center', fontSize: 24, fontWeight: 900, color: NEON.green, opacity: okOn ? 1 : 0.15 }}>OK ✓</div>
-    </div>
-  )
-}
-
-function levels(t: number, c: Cue) {
-  const [a0, a1, a2, a3] = [c.at(0), c.at(1), c.at(2), c.at(3)]
-  const X = [400, 960, 1520]
-  const cam = cameraAt(t, [
-    [0, { x: 960, y: 560, s: 0.95, rx: 10 }],
-    [a1 - 0.2, { x: X[0], y: 560, s: 1.2, ry: 6 }, 1.1],
-    [a2 - 0.2, { x: X[1], y: 560, s: 1.2 }, 1.0],
-    [a3 - 0.2, { x: X[2], y: 560, s: 1.2, ry: -6 }, 1.0],
-    [c.end(3) - 1.2, { x: 960, y: 560, s: 0.92 }, 1.2],
-  ])
-  const cards: { k: string; title: string; sub: string; wait: 0 | 1 | 2; tone: Neon; at: number }[] = [
-    { k: 'acks = 0', title: 'Không chờ', sub: 'nhanh nhất · không biết có tới không', wait: 0, tone: 'red', at: a1 - 0.2 },
-    { k: 'acks = 1', title: 'Chờ leader', sub: 'leader ghi xong là OK', wait: 1, tone: 'amber', at: a2 - 0.2 },
-    { k: 'acks = all', title: 'Chờ cả ISR', sub: 'leader + mọi bản sao đồng bộ', wait: 2, tone: 'green', at: a3 - 0.2 },
-  ]
-  return (
-    <Scene t={t} camera={cam} overlay={<TitleCard t={t} at={a0} kicker="ACKS" title="Thế nào là gửi xong?" dock={a0 + 1.4} />}>
-      {cards.map((cd, i) => (
-        <div key={cd.k}>
-          <NeonCard x={X[i]} y={560} w={500} h={460} kicker={cd.k.toUpperCase()} title={cd.title} sub={cd.sub} tone={cd.tone} strong={t >= cd.at && (i === 2 || t < (cards[i + 1]?.at ?? Infinity))} o={sp(t, cd.at)} titleSize={56}>
-            <WaitChain t={t} at={cd.at} wait={cd.wait} tone={cd.tone} />
-          </NeonCard>
-        </div>
-      ))}
-      <At x={X[2]} y={290}>
-        <Pill text="MẶC ĐỊNH từ Kafka 3.0" tone="green" size={32} o={sp(t, a3 + 2.0)} />
-      </At>
-    </Scene>
+      <Pill x={(cols[1] + cols[2]) / 2} y={laneY[0]} text="không biết có tới?" color={INK.bad} size={28} o={sp(t, a1 + 2.6)} />
+      <Pill x={1655} y={laneY[2]} text="mặc định ≥ 3.0" color={INK.good} size={28} o={sp(t, a3 + 3.6)} />
+    </SoftScene>
   )
 }
 
 /* ------------------------------------------------------------------ 2. how acks=1 loses data */
 
-/* Schematic prototype: two log tapes (leader, follower), a replication cursor, and annotations. */
-function lossSchematic(t: number, c: Cue) {
-  const [a0, a1, a2, a3] = [c.at(0), c.at(1), c.at(2), c.at(3)]
-  const CELLS = 20
-  const CW = 66
-  const TAPE_X = 440
-  const LY = 330
-  const FY = 660
-  const written = 10 + Math.floor(10 * span(t, a0 + 0.3, a0 + 2.0))
-  const copied = 10 + 2.6 * span(t, a1 + 0.1, a1 + 1.2)
-  const dead = t >= a1 + 1.2
-  const promoted = t >= a2 + 0.4
-  const okBack = move(t, a0 + 2.0, 0.5)
-  const cx = (i: number) => TAPE_X + i * CW
-  const leaderState = (i: number): CellState => (i < 10 ? (dead ? 'dead' : 'filled') : i < written ? (dead ? 'dead' : 'new') : 'empty')
-  const followerState = (i: number): CellState => (i < Math.floor(copied) ? 'filled' : promoted && i < 20 ? 'missing' : 'empty')
-  const cam = cameraAt(t, [
-    [0, { x: 960, y: 540, s: 0.98 }],
-    [a2 + 0.2, { x: 1000, y: 600, s: 1.05 }, 1.4],
-    [a3, { x: 960, y: 560, s: 0.98 }, 1.2],
-  ])
-  return (
-    <Scene t={t} camera={cam} backdrop="plain" overlay={<TitleCard t={t} at={0.1} kicker="ACKS = 1" title="Mất tin đã báo OK" tone="amber" dock={1.2} />}>
-      <ServerUnit x={120} y={LY - 30} name={dead ? 'broker-1 ✕' : 'broker-1 leader'} down={dead} t={t} />
-      <ServerUnit x={120} y={FY - 30} name={promoted ? 'broker-2 leader mới' : 'broker-2 follower'} accent={promoted ? INK.warn : INK.accent} t={t} />
-      <LogTape x={TAPE_X} y={LY} cells={CELLS} cellW={CW} state={leaderState} offsetOf={(i) => i * 10} />
-      <LogTape x={TAPE_X} y={FY} cells={CELLS} cellW={CW} state={followerState} offsetOf={(i) => i * 10} cursor={t >= a1 && !promoted ? copied : undefined} cursorLabel="đang chép" />
-      <Wire from={{ x: cx(15), y: 200 }} to={{ x: cx(15), y: LY - 8 }} color={INK.accent} p={move(t, a0 + 0.2, 0.5)} />
-      <div style={{ position: 'absolute', left: cx(15) - 130, top: 150, width: 260, textAlign: 'center', padding: '8px 0', border: `2px solid ${INK.line}`, borderRadius: 6, fontFamily: 'JetBrains Mono, monospace', fontSize: 26, color: INK.text, background: INK.bg }}>app · acks=1</div>
-      <div style={{ position: 'absolute', left: cx(15) + 30, top: 230, fontFamily: 'JetBrains Mono, monospace', fontSize: 28, fontWeight: 700, color: INK.good, opacity: okBack }}>↑ OK (đã xong?)</div>
-      <Note x={cx(12)} y={FY + 35} dx={-60} dy={170} text="follower mới chép tới offset ~125" color={INK.warn} o={vis(t, a1 + 0.6, a2 + 0.3)} />
-      <Note x={cx(15)} y={FY + 35} dx={-80} dy={170} text="offset 130–199 mất — dù đã báo OK" color={INK.bad} o={vis(t, a2 + 0.6, a3)} />
-      <div style={{ position: 'absolute', left: TAPE_X, top: 860, fontSize: 40, fontWeight: 600, color: INK.good, opacity: vis(t, a3 + 0.4) }}>
-        acks=all → chỉ trả OK khi follower đã chép tới offset 199
-      </div>
-    </Scene>
-  )
-}
+const LS = { TX: 440, CW: 66, CELLS: 20, LY: 430, FY: 720, PX: 950, PY: 225 }
 
-// Previous card-based version, kept until the schematic style is approved.
-export function lossCards(t: number, c: Cue) {
+function lossScene(t: number, c: Cue) {
   const [a0, a1, a2, a3] = [c.at(0), c.at(1), c.at(2), c.at(3)]
-  const { p: P, l: L, f: F } = ROW
-  const written = Math.round(100 + 100 * span(t, a0 + 0.3, a0 + 2.0))
-  const copied = Math.round(100 + 25 * span(t, a1 + 0.2, a1 + 1.2))
-  const dead = t >= a1 + 1.2
-  const promoted = t >= a2 + 0.4
-  const leaderBlocks = [...blocks(10), ...Array.from({ length: Math.round((written - 100) / 10) }, () => ({ tone: 'amber' as Neon }))]
-  const followerBlocks = promoted ? [...blocks(10), ...blocks(10, 'red')] : [...blocks(10), ...blocks(Math.round((copied - 100) / 10), 'amber')]
-  const cam = cameraAt(t, [
-    [0, { x: 960, y: 560, s: 0.98, rx: 10 }],
-    [a1 - 0.1, { x: 1060, y: 560, s: 0.97, ry: -4 }, 1.1],
-    [a2 + 0.2, { x: 1120, y: 560, s: 0.98, ry: -5 }, 1.0],
-    [a3, { x: 960, y: 560, s: 0.95 }, 1.2],
-  ])
+  const { TX, CW, CELLS, LY, FY, PX, PY } = LS
+  const cx = (i: number) => TX + i * CW
+  const rew = span(t, a3 - 0.1, a3 + 0.4)
+  const written = 10 + Math.floor(10 * span(t, a0 + 0.3, a0 + 2.1))
+  const copied = Math.floor(10 + 3 * span(t, a1 + 0.2, a1 + 1.6) + 7 * span(t, a3 + 0.6, a3 + 2.6))
+  const kDead = span(t, a1 + 1.8, a1 + 2.2) * (1 - rew)
+  const kProm = span(t, a2 + 0.4, a2 + 0.8) * (1 - rew)
+  const kMiss = span(t, a2 + 0.6, a2 + 1.0) * (1 - rew)
+  const kAll = span(t, a3 - 0.1, a3 + 0.4)
+  const leader = (i: number): CellState => (i < 10 ? 'filled' : i < written ? 'new' : 'empty')
+  const leaderDead = (i: number): CellState => (i < written ? 'dead' : 'empty')
+  const follower = (i: number): CellState => (i < 10 ? 'filled' : i < copied ? 'new' : 'empty')
+  const gx = cx(10) + 33
+  const down = { x: gx, y: PY + 108 }
   return (
-    <Scene
+    <SoftScene
       t={t}
-      camera={cam}
-      overlay={
-        <>
-          <TitleCard t={t} at={0.1} kicker="ACKS = 1" title="Mất tin đã báo OK" tone="amber" dock={1.2} />
-          <At x={960} y={985} style={{ opacity: vis(t, a3 + 0.4), padding: '12px 40px', borderRadius: 24, background: 'rgba(5,7,15,0.9)' }}>
-            <Kinetic t={t} at={a3 + 0.5} text="acks=all: OK chỉ sau khi follower đã chép" size={58} color="#bbf7d0" glowColor={NEON.green} stagger={0.012} />
-          </At>
-        </>
-      }
+      camera={cameraAt(t, [
+        [0, { x: 960, y: 560, s: 1.0 }],
+        [a1, { x: 980, y: 580, s: 1.03 }, 1.3],
+        [a2, { x: 1000, y: 590, s: 1.03 }, 1.3],
+        [a3, WIDE, 1.3],
+      ])}
+      title={{ kicker: 'ACKS = 1', text: 'Mất tin đã báo OK' }}
     >
-      <DataCard x={P.x} y={P.y} t={t} header="app · acks=1" value={t >= a0 + 1.4 ? 'OK' : '…'} role="producer" footer={t >= a0 + 1.4 ? 'offset 100–199 xong ✓' : 'gửi offset 100–199'} o={sp(t, 0.2)} />
-      <DataCard x={L.x} y={L.y} t={t} header="broker-1 · payments-0" value={String(written)} unit="tin" role={dead ? 'offline' : 'leader'} blocks={leaderBlocks} footer={dead ? 'chết trước khi chép xong' : 'ghi xong → OK ngay'} o={sp(t, 0.4)} />
-      <DataCard
-        x={F.x}
-        y={F.y}
-        t={t}
-        header="broker-2 · payments-0"
-        value={promoted ? '100' : String(copied)}
-        unit="tin"
-        role={promoted ? 'new-leader' : 'follower'}
-        blocks={followerBlocks}
-        footer={promoted ? 'offset 100–199 ✗ mất' : 'đang chép…'}
-        o={sp(t, 0.6)}
-      />
-      <Stream t={t} from={{ x: P.x + 230, y: P.y }} to={{ x: L.x - 230, y: L.y }} start={a0 + 0.3} end={a0 + 1.9} every={0.15} />
-      <Stream t={t} from={{ x: L.x - 230, y: L.y + 120 }} to={{ x: P.x + 230, y: P.y + 120 }} start={a0 + 1.0} end={a0 + 2.0} every={0.25} tone="green" arc={-40} />
-      <Stream t={t} from={{ x: L.x + 230, y: L.y }} to={{ x: F.x - 230, y: F.y }} start={a1 + 0.2} end={a1 + 1.1} every={0.35} tone="amber" />
-      <At x={L.x} y={L.y}>
-        <Burst t={t} at={a1 + 1.2} tone="red" r={260} />
-      </At>
-      <At x={F.x} y={F.y}>
-        <Burst t={t} at={a2 + 0.4} tone="red" r={260} />
-      </At>
-    </Scene>
+      <Rise t={t} at={0.2}>
+        <O o={1 - kAll}>
+          <ProducerBox x={PX} y={PY} w={380} title="producer · acks=1" line="offset 100–199" />
+        </O>
+        <O o={kAll}>
+          <ProducerBox x={PX} y={PY} w={380} title="producer · acks=all" line="offset 100–199" />
+        </O>
+      </Rise>
+      <Rise t={t} at={0.4}>
+        <O o={1 - kDead}>
+          <ServerUnit x={120} y={LY - 30} name="broker-1 · leader" t={t} />
+          <LogTape x={TX} y={LY} cells={CELLS} cellW={CW} state={leader} offsetOf={(i) => i * 10} />
+        </O>
+        <O o={kDead}>
+          <ServerUnit x={120} y={LY - 30} name="broker-1 ✕" down t={t} />
+          <LogTape x={TX} y={LY} cells={CELLS} cellW={CW} state={leaderDead} offsetOf={(i) => i * 10} />
+        </O>
+      </Rise>
+      <Rise t={t} at={0.6}>
+        <O o={1 - kProm}>
+          <ServerUnit x={120} y={FY - 30} name="broker-2 · follower" t={t} />
+        </O>
+        <O o={kProm}>
+          <ServerUnit x={120} y={FY - 30} name="broker-2 · leader mới" accent={INK.warn} t={t} />
+        </O>
+        <LogTape x={TX} y={FY} cells={CELLS} cellW={CW} state={follower} offsetOf={(i) => i * 10} />
+        <MissingCells x={TX} y={FY} cw={CW} from={13} to={20} o={kMiss} />
+      </Rise>
+      {/* producer writes to the leader */}
+      <Wire from={down} to={{ x: gx, y: LY - 8 }} color={INK.line} p={move(t, a0 + 0.1, 0.4)} />
+      <Packets t={t} from={down} to={{ x: gx, y: LY - 8 }} start={a0 + 0.3} end={a0 + 2.0} every={0.2} len={0.5} size={20} />
+      <Envelope t={t} at={a0 + 2.2} from={{ x: gx + 160, y: LY - 8 }} to={{ x: gx + 160, y: PY + 108 }} label="OK" color={INK.good} len={0.8} arc={0} />
+      <Icon3D name="thumb-up" x={1480} y={PY + 55} size={110} t={t} at={a0 + 3.0} />
+      {/* leader → follower copy */}
+      <Wire from={{ x: cx(11.5), y: LY + 100 }} to={{ x: cx(11.5), y: FY - 12 }} color={INK.line} p={move(t, a1 - 0.2, 0.4)} flow={t} />
+      <Packets t={t} from={{ x: cx(11.5), y: LY + 100 }} to={{ x: cx(11.5), y: FY - 12 }} start={a1 + 0.1} end={a1 + 1.7} every={0.5} len={0.8} size={20} />
+      <Packets t={t} from={{ x: cx(11.5), y: LY + 100 }} to={{ x: cx(11.5), y: FY - 12 }} start={a3 + 0.6} end={a3 + 2.5} every={0.28} len={0.7} size={20} />
+      <O o={1 - rew}>
+        <Icon3D name="fire" x={250} y={LY - 85} size={110} t={t} at={a1 + 1.9} />
+      </O>
+      <Note x={cx(13)} y={FY + 72} dx={-60} dy={90} text="follower mới chép tới offset ~130" color={INK.warn} o={vis(t, a1 + 1.7, a2 + 0.2)} />
+      <Note x={cx(16.5)} y={FY + 72} dx={-60} dy={90} text="offset 130–199 mất — dù đã báo OK" color={INK.bad} o={vis(t, a2 + 1.0, a3 - 0.2)} />
+      {/* replay with acks=all: OK comes back only after the copy */}
+      <O o={vis(t, a3 + 3.0, Infinity)}>
+        <Envelope t={t} at={a3 + 3.0} from={{ x: gx + 160, y: LY - 8 }} to={{ x: gx + 160, y: PY + 108 }} label="OK" color={INK.good} len={0.8} arc={0} />
+      </O>
+      <Icon3D name="shield" x={1480} y={PY + 55} size={110} t={t} at={a3 + 3.8} />
+      <Say y={945} text="acks=all → OK chỉ khi follower đã chép" color={INK.good} size={46} o={sp(t, a3 + 1.2)} />
+    </SoftScene>
   )
 }
 
 /* ------------------------------------------------------------------ 3. retry creates duplicates */
 
+const DP = { P: { x: 130, y: 420, w: 420 }, B: { x: 1400, y: 390 }, TX: 1040, TY: 700, CW: 130 }
+
 function duplicate(t: number, c: Cue) {
   const [a0, a1, a2] = [c.at(0), c.at(1), c.at(2)]
-  const P = { x: 520, y: 560 }
-  const B = { x: 1400, y: 560 }
-  const written1 = t >= a0 + 1.0
-  const written2 = t >= a2 + 1.0
-  const log: LogBlock[] = [{ label: '#1 · đơn A' }, ...(written1 ? [{ label: '#2 · đơn B' }] : []), ...(written2 ? [{ label: '#2 · đơn B', tone: 'red' as Neon }] : [])]
-  const okLost = t >= a1 + 1.0
-  const cam = cameraAt(t, [
-    [0, { x: 960, y: 560, s: 1.0, rx: 10 }],
-    [a1 - 0.1, { x: 960, y: 540, s: 1.06 }, 1.0],
-    [a2 + 0.6, { x: 1150, y: 580, s: 1.04, ry: -4 }, 1.1],
-  ])
+  const { P, B, TX, TY, CW } = DP
+  const fwd = 445
+  const back = 500
+  const midX = (P.x + P.w + B.x) / 2
+  const wait = span(t, a0 + 1.5, a2)
+  const resend = sp(t, a2)
+  const tint = span(t, a2 + 1.5, a2 + 2.0)
+  const cellX = (i: number) => TX + i * CW + 3
+  const sendPacket = (i: number, at: number) => <Packets t={t} from={{ x: B.x + 130, y: B.y + 185 }} to={{ x: cellX(i) + 52, y: TY }} start={at} end={at} len={0.5} size={22} />
   return (
-    <Scene
+    <SoftScene
       t={t}
-      camera={cam}
-      overlay={
-        <>
-          <TitleCard t={t} at={0.1} kicker="RETRY" title="Một tin thành hai" tone="red" dock={1.2} />
-          <At x={960} y={985} style={{ opacity: vis(t, a2 + 1.3), padding: '12px 40px', borderRadius: 24, background: 'rgba(5,7,15,0.9)' }}>
-            <Kinetic t={t} at={a2 + 1.4} text="đơn B bị ghi 2 lần" size={80} color="#fecaca" glowColor={NEON.red} />
-          </At>
-        </>
-      }
+      camera={cameraAt(t, [
+        [0, { x: 960, y: 560, s: 1.0 }],
+        [a1, { x: 1000, y: 570, s: 1.03 }, 1.3],
+        [a2 + 0.6, { x: 1040, y: 580, s: 1.04 }, 1.3],
+      ])}
+      title={{ kicker: 'RETRY', text: 'Một tin thành hai' }}
     >
-      <DataCard x={P.x} y={P.y} t={t} w={500} header="app · producer" value="#2" unit="thùng" role="producer" footer={t >= a2 ? 'không thấy OK → gửi lại' : t >= a0 + 0.2 ? 'chờ trả lời…' : ''} o={sp(t, 0.2)} />
-      <DataCard x={B.x} y={B.y} t={t} w={560} header="broker-1 · log payments-0" value={String(log.length)} unit="bản ghi" role={written2 ? 'error' : 'leader'} badge={written2 ? 'TRÙNG' : undefined} blocks={log} footer={written2 ? 'trùng ✗' : written1 ? 'đã ghi #2 → gửi OK' : ''} o={sp(t, 0.4)} />
-      <Flying t={t} at={a0 + 0.2} from={{ x: P.x + 250, y: P.y - 40 }} to={{ x: B.x - 280, y: B.y - 40 }} label="#2" />
-      <Flying t={t} at={a1 + 0.2} len={1.6} from={{ x: B.x - 280, y: B.y + 80 }} to={{ x: P.x + 250, y: P.y + 80 }} label="OK" tone="green" stopAt={0.5} />
-      <At x={(P.x + B.x) / 2} y={P.y + 80} style={{ opacity: okLost ? 1 : 0 }}>
-        <div style={{ width: 96, height: 96, borderRadius: 48, display: 'grid', placeItems: 'center', border: `5px solid ${NEON.red}`, color: NEON.red, fontSize: 60, fontWeight: 900, boxShadow: glow(NEON.red, 0.7), background: '#1b0d10' }}>✗</div>
-      </At>
-      <At x={(P.x + B.x) / 2} y={P.y + 190}>
-        <Pill text="câu trả lời bị mất" tone="red" size={30} o={sp(t, a1 + 1.1)} />
-      </At>
-      <Flying t={t} at={a2 + 0.2} from={{ x: P.x + 250, y: P.y - 40 }} to={{ x: B.x - 280, y: B.y - 40 }} label="#2" tone="amber" />
-      <At x={B.x} y={B.y}>
-        <Burst t={t} at={a2 + 1.0} tone="red" r={300} />
-      </At>
-    </Scene>
+      <Rise t={t} at={0.2}>
+        <ProducerBox x={P.x} y={P.y} w={P.w} title="app · producer" line="đơn B (#2)" />
+      </Rise>
+      <Rise t={t} at={0.4}>
+        <ServerUnit x={B.x} y={B.y} name="broker-1" t={t} />
+        <LogTape x={TX} y={TY} cells={6} cellW={CW} state={() => 'empty'} tick={1} />
+      </Rise>
+      <Block x={cellX(0)} y={TY} w={CW - 6} label="A" k={sp(t, 0.8)} />
+      <Block x={cellX(1)} y={TY} w={CW - 6} label="B" k={sp(t, a1 + 0.3)} />
+      <Block x={cellX(2)} y={TY} w={CW - 6} label="B" k={sp(t, a2 + 1.3)} tint={tint} />
+      {sendPacket(1, a1 + 0.3)}
+      {sendPacket(2, a2 + 1.3)}
+      <Wire from={{ x: P.x + P.w + 10, y: fwd }} to={{ x: B.x - 10, y: fwd }} color={INK.line} p={move(t, a0, 0.5)} />
+      <Wire from={{ x: B.x - 10, y: back }} to={{ x: P.x + P.w + 10, y: back }} color={INK.line} p={move(t, a1 + 0.5, 0.4)} dashed />
+      <Envelope t={t} at={a0 + 0.4} from={{ x: P.x + P.w + 60, y: fwd }} to={{ x: B.x - 60, y: fwd }} label="đơn B" len={1.0} arc={0} />
+      <Envelope t={t} at={a1 + 0.9} from={{ x: B.x - 60, y: back }} to={{ x: midX, y: back }} label="OK" color={INK.good} len={0.8} arc={0} />
+      <Icon3D name="wifi" x={midX} y={back} size={110} t={t} at={a1 + 1.7} />
+      <Pill x={midX} y={back + 100} text="câu trả lời bị mất" color={INK.bad} o={sp(t, a1 + 1.9)} />
+      <Envelope t={t} at={a2 + 0.2} from={{ x: P.x + P.w + 60, y: fwd }} to={{ x: B.x - 60, y: fwd }} label="đơn B (gửi lại)" color={INK.warn} len={1.0} arc={0} />
+      {/* retry timer under the producer */}
+      <Icon3D name="clock" x={P.x + 60} y={P.y + 190} size={96} t={t} at={a0 + 1.5} />
+      <div style={{ opacity: clamp(wait * 8) }}>
+        <div style={{ position: 'absolute', left: P.x + 130, top: P.y + 170, fontSize: 28, fontWeight: 700, color: INK.faint, whiteSpace: 'nowrap' }}>
+          <span style={{ opacity: 1 - resend }}>chờ OK…</span>
+          <span style={{ position: 'absolute', left: 0, opacity: resend, color: INK.warn }}>không thấy OK → gửi lại</span>
+        </div>
+        <div style={{ position: 'absolute', left: P.x + 130, top: P.y + 220, width: 290, height: 8, borderRadius: 4, background: 'rgba(255,255,255,0.18)' }}>
+          <div style={{ width: `${wait * 100}%`, height: '100%', borderRadius: 4, background: HERO, boxShadow: '0 0 10px rgba(110,160,255,0.9)' }} />
+        </div>
+      </div>
+      <Icon3D name="copy" x={TX + 2 * CW} y={TY - 90} size={110} t={t} at={a2 + 1.7} />
+      <Say y={900} text="không thấy trả lời → gửi lại" color={INK.warn} size={58} o={sp(t, a0 + 1.6) * (1 - span(t, a2 - 0.3, a2 + 0.1))} />
+      <Say y={900} text="đơn B bị ghi 2 lần" color={INK.bad} size={66} o={sp(t, a2 + 2.1)} />
+    </SoftScene>
   )
 }
 
 /* ------------------------------------------------------------------ 4. sequence numbers */
 
+const SQ = { LX: 120, LW: 440, rowY: (i: number) => 420 + i * 125, PXL: 1050, PYT: 250, PW: 760 }
+
 function sequence(t: number, c: Cue) {
   const [a0, a1, a2, a3] = [c.at(0), c.at(1), c.at(2), c.at(3)]
-  const P = { x: 520, y: 540 }
-  const B = { x: 1400, y: 540 }
-  const got1 = t >= a0 + 1.4
-  const got2 = t >= a0 + 2.6
-  const last = got2 ? 317 : got1 ? 119 : null
-  const batches: LogBlock[] = [
-    { label: '0–119', tone: got1 ? 'green' : undefined },
-    { label: '120–317', tone: got2 ? 'green' : undefined },
-    { label: '318–515' },
-    { label: '516–694', tone: t >= a3 + 1.0 ? 'red' : undefined },
-  ]
-  const stored: LogBlock[] = [...(got1 ? [{ label: '0–119', tone: 'green' as Neon }] : []), ...(got2 ? [{ label: '120–317', tone: 'green' as Neon }] : [])]
-  const verdict = t >= a3 + 1.0 ? { text: '516 ≠ 318 → từ chối ✗', tone: 'red' as Neon } : t >= a2 + 1.0 ? { text: '120–317 ≤ 317 → đã có, bỏ qua ✓', tone: 'green' as Neon } : null
-  const cam = cameraAt(t, [
-    [0, { x: 960, y: 560, s: 1.0, rx: 10 }],
-    [a1 - 0.1, { x: 1300, y: 540, s: 1.08, ry: -4 }, 1.0],
-    [a2 - 0.1, { x: 960, y: 560, s: 0.98 }, 1.0],
-  ])
+  const { LX, LW, rowY, PXL, PYT, PW } = SQ
+  const ranges = ['0–119', '120–317', '318–515', '516–694']
+  const arrive1 = a1 + 1.6
+  const arrive2 = a1 + 3.2
+  // memory counter rolls in at most 4 steps
+  const roll = (from: number, to: number, a: number) => Math.round(lerp(from, to, Math.floor(span(t, a, a + 0.5) * 4) / 4))
+  const seq = t < arrive1 ? null : t < arrive2 ? roll(0, 119, arrive1) : roll(119, 317, arrive2)
+  const verdictDup = span(t, a2 + 1.0, a2 + 1.3) * (1 - span(t, a3 + 0.7, a3 + 1.1))
+  const verdictRej = span(t, a3 + 1.0, a3 + 1.4)
+  const ring = (i: number, color: string, k: number) => k > 0 && <div style={{ position: 'absolute', left: LX, top: rowY(i), width: LW, height: 92, boxSizing: 'border-box', borderRadius: 22, border: `3px solid ${color}`, boxShadow: `0 0 22px ${color}`, opacity: k }} />
+  const from = (i: number) => ({ x: LX + LW + 6, y: rowY(i) + 38 })
+  const to = { x: PXL - 10, y: PYT + 190 }
   return (
-    <Scene
+    <SoftScene
       t={t}
-      camera={cam}
-      overlay={
-        <>
-          <TitleCard t={t} at={0.1} kicker="IDEMPOTENCE" title="Đánh số thùng" tone="green" dock={1.2} />
-          {verdict && (
-            <At x={960} y={985} style={{ padding: '12px 40px', borderRadius: 24, background: 'rgba(5,7,15,0.9)' }}>
-              <div style={{ fontSize: 64, fontWeight: 900, fontFamily: MONO, whiteSpace: 'nowrap', color: verdict.tone === 'red' ? '#fecaca' : '#bbf7d0', textShadow: glow(NEON[verdict.tone], 0.7) }}>{verdict.text}</div>
-            </At>
-          )}
-        </>
-      }
+      camera={cameraAt(t, [
+        [0, { x: 960, y: 540, s: 1.0 }],
+        [a1, { x: 1000, y: 550, s: 1.03 }, 1.3],
+        [a2, { x: 990, y: 560, s: 1.03 }, 1.3],
+        [a3 + 2, WIDE, 1.3],
+      ])}
+      title={{ kicker: 'IDEMPOTENCE', text: 'Đánh số thùng' }}
     >
-      <DataCard x={P.x} y={P.y} t={t} w={520} header="app · producer" value="16" unit="producerId" role="producer" blocks={batches} footer="mỗi thùng mang seq" o={sp(t, 0.2)} />
-      <DataCard x={B.x} y={B.y} t={t} w={560} header="trí nhớ · producer 16 · P0" value={last === null ? '—' : String(last)} unit="seq cuối" role="leader" blocks={stored} footer={t >= a3 + 1.0 ? 'đang chờ 318' : t >= a1 ? 'nhớ seq cuối đã ghi' : ''} strong={t >= a1} o={sp(t, 0.4)} />
-      <Flying t={t} at={a0 + 0.6} from={{ x: P.x + 260, y: P.y - 40 }} to={{ x: B.x - 280, y: B.y - 40 }} label="0–119" />
-      <Flying t={t} at={a0 + 1.8} from={{ x: P.x + 260, y: P.y - 40 }} to={{ x: B.x - 280, y: B.y - 40 }} label="120–317" />
-      <Flying t={t} at={a2 + 0.2} from={{ x: P.x + 260, y: P.y + 60 }} to={{ x: B.x - 280, y: B.y + 60 }} label="120–317 (lại)" tone="amber" />
-      <Flying t={t} at={a3 + 0.2} from={{ x: P.x + 260, y: P.y + 60 }} to={{ x: B.x - 280, y: B.y + 60 }} label="516–694" tone="red" />
-      <At x={B.x} y={B.y}>
-        <Burst t={t} at={a2 + 1.0} tone="green" r={300} />
-      </At>
-      <At x={B.x} y={B.y}>
-        <Burst t={t} at={a3 + 1.0} tone="red" r={300} />
-      </At>
-    </Scene>
+      <O o={vis(t, a0 + 0.3, a0 + 2.0)}>
+        <Icon3D name="hash" x={810} y={500} size={190} t={t} at={a0 + 0.3} />
+      </O>
+      <Rise t={t} at={a0 + 1.5}>
+        <ProducerBox x={LX} y={PYT} w={LW} title="producer" line="producerId 16" />
+      </Rise>
+      {ranges.map((r, i) => (
+        <div key={r}>
+          <Rise t={t} at={a0 + 3.0 + i * 0.5}>
+            <div style={{ ...INK.card, position: 'absolute', left: LX, top: rowY(i), width: LW, height: 92, boxSizing: 'border-box', display: 'flex', alignItems: 'center', gap: 18, padding: '0 26px', opacity: i === 2 ? 0.7 : 1 }}>
+              <span style={{ width: 46, height: 46, borderRadius: 23, display: 'grid', placeItems: 'center', fontSize: 26, fontWeight: 800, background: HERO, color: '#fff' }}>{i + 1}</span>
+              <span style={{ fontFamily: MONO, fontSize: 40, fontWeight: 700, color: '#fff' }}>seq {r}</span>
+            </div>
+          </Rise>
+        </div>
+      ))}
+      {ring(0, INK.good, span(t, arrive1, arrive1 + 0.4))}
+      {ring(1, INK.good, span(t, arrive2, arrive2 + 0.4))}
+      {ring(3, INK.bad, span(t, a3 + 1.0, a3 + 1.4))}
+      {/* broker memory */}
+      <Rise t={t} at={a1 + 0.2}>
+        <div style={{ ...INK.card, position: 'absolute', left: PXL, top: PYT, width: PW, height: 380, boxSizing: 'border-box' }} />
+        <div style={{ position: 'absolute', left: PXL + 40, top: PYT + 24, fontSize: 28, fontWeight: 700, color: INK.faint }}>broker nhớ · producer 16 · P0</div>
+        <div style={{ position: 'absolute', left: PXL + 40, top: PYT + 76, fontSize: 30, fontWeight: 700, color: INK.faint }}>seq cuối đã ghi</div>
+        <div style={{ position: 'absolute', left: PXL + 40, top: PYT + 110, fontFamily: MONO, fontSize: 92, fontWeight: 800, color: '#fff', fontVariantNumeric: 'tabular-nums', textShadow: '0 0 30px rgba(91,151,255,0.7)' }}>{seq === null ? '—' : seq}</div>
+        <LogTape x={PXL + 40} y={PYT + 270} cells={2} cellW={340} state={() => 'empty'} tick={1} offsetOf={(i) => [0, 120][i]} />
+      </Rise>
+      <Block x={PXL + 43} y={PYT + 270} w={334} label="0–119" k={sp(t, arrive1)} mono />
+      <Block x={PXL + 383} y={PYT + 270} w={334} label="120–317" k={sp(t, arrive2)} mono />
+      {/* flights */}
+      <Envelope t={t} at={a1 + 0.8} from={from(0)} to={to} label="0–119" len={0.8} />
+      <Envelope t={t} at={a1 + 2.4} from={from(1)} to={to} label="120–317" len={0.8} />
+      <Envelope t={t} at={a2 + 0.2} from={from(1)} to={to} label="120–317 (gửi lại)" color={INK.warn} len={0.8} />
+      <Envelope t={t} at={a3 + 0.2} from={from(3)} to={to} label="516–694" color={INK.bad} len={0.8} />
+      {/* verdict */}
+      <Rise t={t} at={a2 + 1.0}>
+        <div style={{ ...INK.card, position: 'absolute', left: PXL, top: 710, width: PW, height: 190, boxSizing: 'border-box' }} />
+      </Rise>
+      <O o={verdictDup}>
+        <Icon3D name="tick" x={PXL + 100} y={805} size={130} t={t} at={a2 + 1.0} />
+        <div style={{ position: 'absolute', left: PXL + 190, top: 748, fontSize: 46, fontWeight: 800, color: INK.good, whiteSpace: 'nowrap' }}>đã có → bỏ qua</div>
+        <div style={{ position: 'absolute', left: PXL + 190, top: 810, fontFamily: MONO, fontSize: 32, fontWeight: 700, color: INK.faint, whiteSpace: 'nowrap' }}>120–317 ≤ 317</div>
+      </O>
+      <O o={verdictRej}>
+        <Icon3D name="thumb-down" x={PXL + 100} y={805} size={130} t={t} at={a3 + 1.0} />
+        <div style={{ position: 'absolute', left: PXL + 190, top: 748, fontSize: 46, fontWeight: 800, color: INK.bad, whiteSpace: 'nowrap' }}>nhảy cóc → từ chối</div>
+        <div style={{ position: 'absolute', left: PXL + 190, top: 810, fontFamily: MONO, fontSize: 32, fontWeight: 700, color: INK.faint, whiteSpace: 'nowrap' }}>516 ≠ 318 (đang chờ)</div>
+      </O>
+    </SoftScene>
   )
 }
 
 /* ------------------------------------------------------------------ 5. limits */
 
+const LM = { xs: [130, 700, 1270], w: 520, cy: 370, h: 430 }
+
 function limits(t: number, c: Cue) {
   const [a0, a1, a2] = [c.at(0), c.at(1), c.at(2)]
-  const { p: A, l: B, f: C } = ROW
   const d2 = c.end(2) - a2
-  // Each card is a mini broker log for "đơn B": how many copies end up stored in each situation.
-  const at = { ok1: a1 + 0.3, ok2: a1 + 1.4, re1: a2 + 0.2, re2: a2 + d2 * 0.3, two1: a2 + d2 * 0.45, two2: a2 + d2 * 0.6 }
-  const show = (k: keyof typeof at) => t >= at[k]
-  const cards: { x: number; header: string; role: 'ok' | 'error'; badge: string; blocks: LogBlock[]; footer: string; o: number }[] = [
-    {
-      x: A.x,
-      header: 'retry · 1 producer',
-      role: 'ok',
-      badge: 'CHỐNG ĐƯỢC',
-      blocks: show('ok1') ? [{ label: 'đơn B · pid 16', tone: 'green' }] : [],
-      footer: show('ok2') ? 'bản gửi lại bị bỏ qua ✓' : 'pid 16 gửi đơn B',
-      o: sp(t, a1 - 0.2),
-    },
-    {
-      x: B.x,
-      header: 'restart app',
-      role: 'error',
-      badge: 'KHÔNG CHỐNG',
-      blocks: [...(show('re1') ? [{ label: 'đơn B · pid 16' }] : []), ...(show('re2') ? [{ label: 'đơn B · pid 17', tone: 'red' as Neon }] : [])],
-      footer: show('re2') ? 'pid mới → coi là khác' : 'trước khi restart',
-      o: sp(t, a2),
-    },
-    {
-      x: C.x,
-      header: '2 producer',
-      role: 'error',
-      badge: 'KHÔNG CHỐNG',
-      blocks: [...(show('two1') ? [{ label: 'đơn B · pid 16' }] : []), ...(show('two2') ? [{ label: 'đơn B · pid 22', tone: 'red' as Neon }] : [])],
-      footer: show('two2') ? 'mỗi bên một pid' : 'instance A và B',
-      o: sp(t, a2 + d2 * 0.4),
-    },
+  const { xs, w, cy, h } = LM
+  const shrink = move(t, a1 - 0.3, 0.9)
+  const tileY = lerp(400, 225, shrink)
+  const tileH = lerp(250, 100, shrink)
+  const iconS = lerp(130, 74, shrink)
+  const tiles = [
+    { icon: 'toggle' as const, l1: 'enable.idempotence', l2: '= true', at: a0 + 0.4 },
+    { icon: 'flag' as const, l1: 'mặc định', l2: 'từ Kafka 3.0', at: a0 + 1.8 },
+    { icon: 'shield' as const, l1: 'cần', l2: 'acks = all', at: a0 + 3.0 },
   ]
-  const cam = cameraAt(t, [
-    [0, { x: 960, y: 560, s: 0.95, rx: 10 }],
-    [a1 - 0.2, { x: 760, y: 560, s: 1.0, ry: 5 }, 1.0],
-    [a2 - 0.2, { x: 960, y: 560, s: 0.93, ry: -3 }, 1.1],
-  ])
+  const retryAt = a1 + 1.3
+  const t2 = { b1: a2 + 0.4, b2: a2 + d2 * 0.3, c: a2 + d2 * 0.4, c1: a2 + d2 * 0.4 + 0.4, c2: a2 + d2 * 0.6 }
+  const cards = [
+    { x: xs[0], head: 'retry · 1 producer', badge: 'CHỐNG ĐƯỢC', ok: true, at: a1, f1: 'pid 16 gửi đơn B', f2: 'bản gửi lại bị bỏ qua ✓', fAt: retryAt + 0.9 },
+    { x: xs[1], head: 'restart app', badge: 'KHÔNG CHỐNG', ok: false, at: a2, f1: 'trước khi restart', f2: 'pid mới → coi là khác', fAt: t2.b2 },
+    { x: xs[2], head: '2 producer', badge: 'KHÔNG CHỐNG', ok: false, at: t2.c, f1: 'instance A và B', f2: 'mỗi bên một pid', fAt: t2.c2 },
+  ]
+  const row = (i: number) => cy + 240 + i * 90
   return (
-    <Scene
+    <SoftScene
       t={t}
-      camera={cam}
-      overlay={
-        <>
-          <TitleCard t={t} at={0.1} kicker="GIỚI HẠN" title="Idempotence chống được gì?" dock={1.2} />
-          <At x={960} y={985} style={{ opacity: vis(t, c.end(2) - 1.2), padding: '12px 40px', borderRadius: 24, background: 'rgba(5,7,15,0.9)' }}>
-            <Kinetic t={t} at={c.end(2) - 1.1} text="muốn hơn → transaction (Module 6)" size={60} color="#bfdbfe" glowColor={NEON.blue} stagger={0.015} />
-          </At>
-        </>
-      }
+      camera={cameraAt(t, [
+        [0, { x: 960, y: 560, s: 1.0 }],
+        [a1 - 0.2, { x: 930, y: 580, s: 1.04 }, 1.2],
+        [a2 - 0.2, WIDE, 1.2],
+      ])}
+      title={{ kicker: 'GIỚI HẠN', text: 'Idempotence chống được gì?' }}
     >
-      <At x={960} y={260}>
-        <Pill text="enable.idempotence=true mặc định từ 3.0 · cần acks=all" tone="sky" size={32} o={Math.min(sp(t, a0 + 0.6), vis(t, 0, a1 - 0.2))} style={{ fontFamily: MONO }} />
-      </At>
-      {cards.map((cd) => (
-        <DataCard
-          key={cd.header}
-          x={cd.x}
-          y={580}
-          t={t}
-          header={cd.header}
-          value={String(cd.blocks.length)}
-          unit="bản đơn B"
-          role={cd.role}
-          badge={cd.badge}
-          blocks={cd.blocks}
-          footer={cd.footer}
-          o={cd.o}
-        />
+      {tiles.map((tl, i) => (
+        <div key={tl.l1}>
+          <Rise t={t} at={tl.at}>
+            <div style={{ ...INK.card, position: 'absolute', left: xs[i], top: tileY, width: w, height: tileH, boxSizing: 'border-box' }} />
+            <div style={{ position: 'absolute', left: xs[i] + iconS + 36, top: tileY + tileH / 2 - 40, fontFamily: MONO, fontSize: 30, fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', lineHeight: 1.3 }}>
+              {tl.l1}
+              <br />
+              <span style={{ color: INK.accent }}>{tl.l2}</span>
+            </div>
+          </Rise>
+          <Icon3D name={tl.icon} x={xs[i] + 20 + iconS / 2} y={tileY + tileH / 2} size={iconS} t={t} at={tl.at + 0.15} />
+        </div>
       ))}
-      <Flying t={t} at={at.ok2 - 0.6} from={{ x: A.x, y: 300 }} to={{ x: A.x, y: 520 }} label="pid 16 · lại" tone="amber" />
-      <At x={A.x} y={580}>
-        <Burst t={t} at={at.ok2} tone="green" r={260} />
-      </At>
-      <At x={B.x} y={580}>
-        <Burst t={t} at={at.re2} tone="red" r={260} />
-      </At>
-      <At x={C.x} y={580}>
-        <Burst t={t} at={at.two2} tone="red" r={260} />
-      </At>
-    </Scene>
+      {cards.map((cd) => {
+        const swap = span(t, cd.fAt, cd.fAt + 0.35)
+        return (
+          <div key={cd.head}>
+            <Rise t={t} at={cd.at}>
+              <div style={{ ...INK.card, position: 'absolute', left: cd.x, top: cy, width: w, height: h, boxSizing: 'border-box', borderColor: cd.ok ? INK.good : INK.bad }} />
+              <div style={{ position: 'absolute', left: cd.x + 30, top: cy + 28, fontSize: 36, fontWeight: 800, color: '#fff', whiteSpace: 'nowrap' }}>{cd.head}</div>
+              <div style={{ position: 'absolute', left: cd.x + 30, top: cy + 90, padding: '6px 20px', borderRadius: 999, fontSize: 28, fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', background: 'rgba(8,22,82,0.92)', border: `1.5px solid ${cd.ok ? INK.good : INK.bad}`, boxShadow: `0 0 16px ${cd.ok ? INK.good : INK.bad}aa` }}>{cd.badge}</div>
+              <div style={{ position: 'absolute', left: cd.x + 30, top: cy + 160, fontSize: 28, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                <span style={{ color: INK.faint, opacity: 1 - swap }}>{cd.f1}</span>
+                <span style={{ position: 'absolute', left: 0, color: cd.ok ? INK.good : INK.bad, opacity: swap }}>{cd.f2}</span>
+              </div>
+              {Array.from({ length: 2 }, (_, r) => (
+                <div key={r} style={{ position: 'absolute', left: cd.x + 30, top: row(r), width: w - 60, height: 70, boxSizing: 'border-box', borderRadius: 16, border: '1.5px solid rgba(110,160,255,0.35)', background: 'rgba(12,30,96,0.55)' }} />
+              ))}
+            </Rise>
+            <Icon3D name={cd.ok ? 'shield' : 'thumb-down'} x={cd.x + w - 85} y={cy + 85} size={112} t={t} at={cd.at + (cd.ok ? 0.5 : 2.2)} />
+          </div>
+        )
+      })}
+      {/* card 1: original, then the retry is dropped */}
+      <Block x={xs[0] + 30} y={row(0)} w={w - 60} label="đơn B · pid 16" k={sp(t, a1 + 0.5)} size={30} />
+      <Envelope t={t} at={retryAt} from={{ x: xs[0] + w / 2, y: cy + h + 40 }} to={{ x: xs[0] + w / 2, y: row(1) + 35 }} label="pid 16 · lại" color={INK.warn} len={0.9} arc={0} />
+      <O o={sp(t, retryAt + 0.9)}>
+        <div style={{ position: 'absolute', left: xs[0] + 30, top: row(1), width: w - 60, height: 70, boxSizing: 'border-box', borderRadius: 16, border: `2px dashed ${INK.good}`, display: 'grid', placeItems: 'center', fontSize: 30, fontWeight: 800, color: INK.good }}>bỏ qua ✓</div>
+      </O>
+      {/* card 2 */}
+      <Block x={xs[1] + 30} y={row(0)} w={w - 60} label="đơn B · pid 16" k={sp(t, t2.b1)} size={30} />
+      <Block x={xs[1] + 30} y={row(1)} w={w - 60} label="đơn B · pid 17" k={sp(t, t2.b2)} tint={span(t, t2.b2 + 0.2, t2.b2 + 0.6)} size={30} />
+      {/* card 3 */}
+      <Block x={xs[2] + 30} y={row(0)} w={w - 60} label="đơn B · pid 16" k={sp(t, t2.c1)} size={30} />
+      <Block x={xs[2] + 30} y={row(1)} w={w - 60} label="đơn B · pid 22" k={sp(t, t2.c2)} tint={span(t, t2.c2 + 0.2, t2.c2 + 0.6)} size={30} />
+      <Say y={905} text="muốn hơn → transaction (Module 6)" color="#bfd6ff" size={52} o={sp(t, c.end(2) - 1.6)} />
+    </SoftScene>
   )
 }
 
@@ -428,26 +528,51 @@ function limits(t: number, c: Cue) {
 
 function summary(t: number, c: Cue) {
   return (
-    <SummaryGrid
-      t={t}
-      cue={c}
-      cards={[
-        { title: 'acks = khi nào xong', body: '0 không chờ · 1 leader · all cả ISR', tone: 'blue' },
-        { title: 'acks=1 có thể mất', body: 'leader chết trước khi follower chép', tone: 'red' },
-        { title: 'producerId + seq', body: 'broker bỏ thùng trùng, chặn thùng nhảy cóc', tone: 'green' },
-        { title: 'Chỉ trong 1 phiên', body: 'restart / 2 producer → cần transaction', tone: 'amber' },
-      ]}
-    />
+    <SoftTheme>
+      <SummaryList t={t} cue={c} items={['acks: khi nào là gửi xong', 'acks=1 có thể mất tin đã báo OK', 'producerId + seq: bỏ trùng, giữ thứ tự', 'Idempotence chỉ trong một phiên producer']} />
+    </SoftTheme>
   )
 }
 
-const RENDERS: Record<string, LessonScene['render']> = { hook, levels, loss: lossSchematic, duplicate, sequence, limits, summary }
+const RENDERS: Record<string, LessonScene['render']> = { hook, levels, loss: lossScene, duplicate, sequence, limits, summary }
+
+/** Key-moment sounds, timed to the same cue offsets the scenes animate on. */
+const SFX: Record<string, SceneSfx[]> = {
+  hook: [
+    { kind: 'ding', at: (c) => c.at(0) + 2.7 },
+    { kind: 'error', at: (c) => c.at(1) + 0.9 },
+    { kind: 'error', at: (c) => c.at(1) + 3.0 },
+  ],
+  levels: [
+    { kind: 'tick', at: (c) => c.at(1) + 0.7 },
+    { kind: 'tick', at: (c) => c.at(2) + 1.5 },
+    { kind: 'ding', at: (c) => c.at(3) + 2.4 },
+  ],
+  loss: [
+    { kind: 'error', at: (c) => c.at(1) + 1.8 },
+    { kind: 'error', at: (c) => c.at(2) + 0.6 },
+    { kind: 'ding', at: (c) => c.at(3) + 3.8 },
+  ],
+  duplicate: [
+    { kind: 'error', at: (c) => c.at(1) + 1.7 },
+    { kind: 'error', at: (c) => c.at(2) + 1.5 },
+  ],
+  sequence: [
+    { kind: 'ding', at: (c) => c.at(2) + 1.0 },
+    { kind: 'error', at: (c) => c.at(3) + 1.0 },
+  ],
+  limits: [
+    { kind: 'ding', at: (c) => c.at(1) + 2.2 },
+    { kind: 'error', at: (c) => c.at(2) + (c.end(2) - c.at(2)) * 0.3 + 0.2 },
+    { kind: 'error', at: (c) => c.at(2) + (c.end(2) - c.at(2)) * 0.6 + 0.2 },
+  ],
+}
 
 const q = (prompt: string, options: string[], answer: number, explain: string) => ({ kind: 'choice' as const, prompt, options, answer, explain })
 
 export const acksIdempotenceLesson: Lesson = {
   ...acksIdempotenceScript,
-  scenes: acksIdempotenceScript.scenes.map((s) => ({ ...s, render: RENDERS[s.id] })),
+  scenes: acksIdempotenceScript.scenes.map((s) => ({ ...s, render: RENDERS[s.id], sfx: SFX[s.id] })),
   intro: [
     { kind: 'video', scenes: ['hook'] },
     {
